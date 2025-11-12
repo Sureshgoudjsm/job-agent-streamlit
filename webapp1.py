@@ -62,11 +62,14 @@ def process_recruiter_text(text_to_process: str) -> dict:
         return {"error": f"An error occurred: {e}"}
 
 # --- 5. Building the Streamlit Web Interface (MODIFIED SECTION) ---
-st.title("🤖 AI Job Agent")
+#st.title("🤖 AI Job Agent")
+st.title("Roopa 👄")
 st.write("Provide the key details from your conversation and paste any written info (like emails or JDs) to extract a summary.")
 
 # --- NEW: Input Field 1 for Call Details ---
-st.subheader("1. On-Call Communication Summary")
+#st.subheader("1. On-Call Communication Summary")
+st.subheader("Snanam ki vastava")
+
 call_details = st.text_input(
     "Summarize your call with the recruiter in one or two lines.",
     placeholder="e.g., Spoke with John from Tech Recruiters about a Python role, salary is around 150k."
