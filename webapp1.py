@@ -54,7 +54,7 @@ def process_recruiter_text(text_to_process: str) -> str:
         return f"An error occurred while contacting the AI service: {e}"
 
 # --- 5. Building the Streamlit Web Interface ---
-st.title("Hi Roopa Ela unnavv, EM chestunnavv, call mee snanam ki avstava")
+st.title("Hi Roopa Ela unnavv, EM chestunnavv, call mee snanam ki vastava")
 st.write("Paste the text from a recruiter's email or your call notes below to extract key details.")
 
 recruiter_text = st.text_area(
