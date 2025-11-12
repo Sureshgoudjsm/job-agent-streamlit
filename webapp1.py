@@ -71,7 +71,9 @@ def process_recruiter_text(text_to_process: str) -> dict:
         return {"error": f"An error occurred: {e}"}
 
 # --- 5. Building the Streamlit Web Interface (MODIFIED CSV HEADERS) ---
-st.title("🤖 AI Job Agent")
+#st.title("🤖 AI Job Agent")
+st.title("🤖 Usain and Jagan")
+
 st.write("Provide the key details from your conversation and paste any written info (like emails or JDs) to extract a summary.")
 
 st.subheader("1. On-Call Communication Summary")
