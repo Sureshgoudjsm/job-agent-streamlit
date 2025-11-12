@@ -56,7 +56,8 @@ def process_recruiter_text(text_to_process: str) -> dict:
     Sends text to the Gemini model, expects a JSON response, and parses it into a Python dictionary.
     """
     # Using your preferred model, as requested.
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    #model = genai.GenerativeModel('gemini-1.5-flash')
+    model=genai.GenerativeModel('gemini-2.5-flash')
     
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
