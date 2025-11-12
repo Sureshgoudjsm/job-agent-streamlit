@@ -59,7 +59,7 @@ st.write("Paste the text from a recruiter's email or your call notes below to ex
 
 recruiter_text = st.text_area(
     "Recruiter Text Input", 
-    height=300, 
+    height=200, 
     placeholder="Example: Hi, my name is Jane from Tech Recruiters..."
 )
 
