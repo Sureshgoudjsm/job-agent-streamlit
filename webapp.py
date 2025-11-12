@@ -90,7 +90,28 @@ if st.button("Extract Details"):
             # Display the results
             st.subheader("Extracted Information")
             st.markdown(structured_data) # Use st.markdown to render the formatted text nicely
+            
+   if st.button("Extract Details"):
+    if recruiter_text.strip():
+        with st.spinner("🧠 The AI is analyzing the text..."):
+            structured_data = process_recruiter_text(recruiter_text)
+            
+            st.subheader("Extracted Information")
+            st.markdown(structured_data)
+            
+            # --- NEW CODE ADDED HERE ---
+            # Add a divider for visual separation
+            st.divider() 
+            # Add the download button
+            st.download_button(
+                label="📄 Download as .txt",
+                data=structured_data,
+                file_name="job_details.txt",
+                mime="text/plain"
+            )
+            # --- END OF NEW CODE ---     
     else:
         # If the text box is empty, show a warning
         st.warning("Please paste some text into the input box first.")
+
 
