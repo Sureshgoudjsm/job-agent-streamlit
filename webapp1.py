@@ -20,7 +20,7 @@ except KeyError:
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts: 1) Job Details (JD, email, call notes) and 2) Applicant Skills (Resume/Summary).
 
-**CRITICAL INSTRUCTION:** You MUST return the output as a single, valid JSON object. Do not add any explanatory text, markdown formatting, or code fences like ```json. Your entire response should be only the JSON object itself. If a piece of information is not available, the value for that key MUST be "Not specified".
+**CRITICAL INSTRUCTION:** You MUST return the output as a single, valid JSON object. Do not add any explanatory text, markdown formatting, or code fences like ```
 
 **JSON Keys to use:**
 - "date_contacted": Date HR contacted you or you applied.
@@ -47,24 +47,20 @@ You are an expert data extraction assistant for job seekers. Your task is to ana
 - "prep_hint": A one-sentence, proactive hint based on the extracted status (e.g., if 'Awaiting JD', output: 'Draft a polite follow-up email asking for the JD by tomorrow.'; if 'Interview Scheduled', output: 'Focus on behavioral questions and a deep dive into the extracted keywords.').
 
 **Input Text (Job Details & Applicant Skills):**
----
+***
 {text_input}
----
+***
 
 **JSON Output:**
 """
 
 # --- 3. The Core Logic Function (Unchanged) ---
 def process_recruiter_text(text_to_process: str) -> dict:
-    """
-    Sends text to the Gemini model, expects a JSON response, and parses it into a Python dictionary.
-    """
     model = genai.GenerativeModel('gemini-2.5-flash')
-    
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
         response = model.generate_content(prompt_with_input)
-        clean_response = response.text.strip().replace("```json", "").replace("```", "")
+        clean_response = response.text.strip().replace("```json", "").replace("```
         parsed_json = json.loads(clean_response)
         return parsed_json
     except json.JSONDecodeError:
@@ -72,29 +68,23 @@ def process_recruiter_text(text_to_process: str) -> dict:
     except Exception as e:
         return {"error": f"An error occurred: {e}"}
 
-
 # --- 4. iCalendar File Generation Function (Unchanged) ---
 def create_ics_file(details: dict) -> str:
-    """Generates an iCalendar (.ics) string from extracted job details."""
-    
     date_str = details.get("interview_scheduled_date", "Not specified")
     role = details.get("role_position", "Job Interview")
     client = details.get("client_company", "Client Company")
     recruiter = details.get("hr_name", "Recruiter")
     mode = details.get("interview_mode", "Mode Not Specified")
-    
     try:
         start_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(hour=10, minute=0, second=0)
         end_date = start_date + datetime.timedelta(hours=1)
-        
         dt_format = "%Y%m%dT%H%M%S"
         dt_start = start_date.strftime(dt_format)
         dt_end = end_date.strftime(dt_format)
         dt_stamp = datetime.datetime.now().strftime(dt_format)
-        
     except ValueError:
         return ""
-    
+
     summary = f"Interview: {role} @ {client}"
     description = (
         f"Role: {role}\n"
@@ -104,7 +94,7 @@ def create_ics_file(details: dict) -> str:
         f"Mode: {mode}\n"
         f"HR Contact: {details.get('email_id', 'N/A')} / {details.get('phone_number', 'N/A')}"
     )
-    
+
     ics_content = f"""BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//AI Job Agent//EN
@@ -117,81 +107,73 @@ SUMMARY:{summary}
 DESCRIPTION:{description}
 END:VEVENT
 END:VCALENDAR"""
-
     return ics_content.replace('\n', '\r\n')
 
-# --- 5. Building the Streamlit Web Interface (FINAL UX) ---
+# --- 5. Building the Streamlit Web Interface (With Expanders) ---
 st.title("🤖 AI Job Agent")
 st.write("Analyze job details and your own skills simultaneously to generate a match score and tracking data.")
 
-# Add a help expander for transparency
-with st.expander("❓ How This Works & Expected Fields"):
+# Help Section
+with st.expander("❓ How This Works & Expected Fields", expanded=False):
     st.markdown("""
-        The AI analyzes the Job Details and your skills to pull **22 key data points**, including a **Match Score** and **Proactive Prep Hint**.
-        
-        **New Fields:** The output now includes **`match_score`**, **`skill_gap_analysis`**, and **`prep_hint`**.
-        
-        **Tip:** For the best results, paste your resume/skills into the first box, and the full Job Description into the third box.
+        The AI analyzes the Job Details and your skills to pull 22 key data points, including a Match Score and Proactive Prep Hint.
+
+        New Fields: match_score, skill_gap_analysis, and prep_hint.
+
+        Tip: For best results, put your resume/skills in the first section, and the full Job Description in the third section.
     """)
 
-# Use st.form to group all inputs and control execution
+# Form with Expanders for Each Section
 with st.form(key='data_extraction_form'):
-    
-    st.subheader("1. Applicant Skills (For Match Score)")
-    applicant_skills = st.text_area(
-        "Paste your key skills, technologies, and years of experience here.",
-        height=150,
-        placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
-        key='applicant_skills'
-    )
 
-    st.subheader("2. Job Details & Communication")
-    call_details = st.text_input(
-        "Summarize your conversation with the recruiter in one or two lines:",
-        placeholder="e.g., Spoke with John from Tech Recruiters about a Python role, salary is around 150k.",
-        key='call_details'
-    )
+    with st.expander("🧠 1. Applicant Skills (For Match Score)", expanded=False):
+        applicant_skills = st.text_area(
+            "Paste your key skills, technologies, and years of experience here.",
+            height=150,
+            placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
+            key='applicant_skills'
+        )
 
-    st.subheader("3. Full Job Description Text")
-    recruiter_text = st.text_area(
-        "Paste the **full text** from the Job Description, email, or other source here.", 
-        height=350,
-        placeholder="E.g., Dear [Name], We are looking for a Senior Full Stack Developer (React/Node.js) for our client, Acme Corp. in Bangalore (Hybrid). The interview is scheduled for 2025-12-01. Salary range is 18-22 LPA...",
-        key='recruiter_text'
-    )
-    
-    # The submit button
+    with st.expander("📞 2. Recruiter Call Summary", expanded=False):
+        call_details = st.text_input(
+            "Summarize your conversation with the recruiter:",
+            placeholder="e.g., Spoke with John from Tech Recruiters about a Python role, salary is around 150k.",
+            key='call_details'
+        )
+
+    with st.expander("📄 3. Full Job Description Text", expanded=False):
+        recruiter_text = st.text_area(
+            "Paste the full Job Description, email, or message here:",
+            height=350,
+            placeholder="E.g., Dear [Name], We are looking for a Senior Full Stack Developer (React/Node.js) for our client, Acme Corp. in Bangalore (Hybrid)...",
+            key='recruiter_text'
+        )
+
     submitted = st.form_submit_button("✨ Extract, Score, and Prepare Files")
 
+# --- 6. Processing Logic (Unchanged) ---
 if submitted:
-    
-    # Combined input now includes Applicant Skills
     combined_text = (
         f"--- APPLICANT SKILLS ---\n{applicant_skills}\n\n"
         f"--- JOB DETAILS ---\n"
         f"Call Summary: {call_details}\n\nDetailed Info:\n{recruiter_text}"
     )
-    
+
     if call_details.strip() or recruiter_text.strip():
         with st.spinner("🧠 The AI is analyzing and scoring the fit..."):
             structured_data_dict = process_recruiter_text(combined_text)
-            
+
             if "error" in structured_data_dict:
                 st.error(structured_data_dict["error"])
             else:
-                st.success("Extraction and scoring complete! Review the results and download your files below.")
+                st.success("Extraction and scoring complete! Review results and download your files below.")
                 st.subheader("✅ Extracted Information Review")
-                
-                # Convert to DataFrame for a clean table view
+
                 df_display = pd.DataFrame([structured_data_dict]).T
                 df_display.columns = ["Extracted Value"]
-                st.dataframe(df_display, use_container_width=True) # Display the table
+                st.dataframe(df_display, use_container_width=True)
 
                 st.divider()
-                
-                # --- FILE DOWNLOAD SECTION ---
-                
-                # 1. Calendar Event
                 if structured_data_dict.get("interview_scheduled_date") not in ["Not specified", None, ""]:
                     ics_data = create_ics_file(structured_data_dict)
                     if ics_data:
@@ -201,20 +183,16 @@ if submitted:
                             file_name=f"interview_{structured_data_dict['client_company']}.ics",
                             mime="text/calendar"
                         )
-                
-                # 2. Download CSV (FINAL HEADERS)
+
                 output = io.StringIO()
                 headers = [
                     "date_contacted", "hr_name", "phone_number", "email_id", "role_position",
                     "recruiter_company", "client_company", "location", "job_type", "mode_of_contact",
                     "interview_mode", "interview_scheduled_date", "round_1_details", "round_2_details",
                     "ctc_offered_expected", "status", "next_follow_up_date", "review_notes",
-                    "extracted_keywords", 
-                    "match_score", 
-                    "skill_gap_analysis",
-                    "prep_hint" # FINAL NEW HEADER
+                    "extracted_keywords", "match_score", "skill_gap_analysis", "prep_hint"
                 ]
-                
+
                 writer = csv.DictWriter(output, fieldnames=headers)
                 writer.writeheader()
                 writer.writerow(structured_data_dict)
@@ -227,4 +205,4 @@ if submitted:
                     mime="text/csv"
                 )
     else:
-        st.warning("Please provide some information in at least one of the input boxes.")
+        st.warning("Please provide some information in at least one of the input sections.")
