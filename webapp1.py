@@ -151,7 +151,7 @@ st.markdown(
 
 
 # Help Section
-with st.expander("❓ ## How This Works & Expected Fields", expanded=False):
+with st.expander("❓ How This Works & Expected Fields", expanded=False):
     st.markdown("""
         The AI analyzes the Job Details and your skills to pull 22 key data points, including a **Match Score** and **Proactive Prep Hint**.
 
