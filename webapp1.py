@@ -138,7 +138,8 @@ with st.form(key='data_extraction_form'):
     with st.expander("Paste your key skills, technologies, and experience here.", expanded=True):
         applicant_skills = st.text_area(
             "Applicant Skills Input:",
-            height=150,
+            #height=150,
+            height=50,
             placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
             key='applicant_skills',
             label_visibility="collapsed" # Hide redundant label
