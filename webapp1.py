@@ -160,7 +160,8 @@ with st.form(key='data_extraction_form'):
     with st.expander("Paste the full Job Description, email, or message here:", expanded=True):
         recruiter_text = st.text_area(
             "Recruiter Text Input:",
-            height=350,
+            #height=350,
+            height=150,
             placeholder="E.g., Dear [Name], We are looking for a Senior Full Stack Developer (React/Node.js) for our client, Acme Corp. in Bangalore (Hybrid)...",
             key='recruiter_text',
             label_visibility="collapsed" # Hide redundant label
