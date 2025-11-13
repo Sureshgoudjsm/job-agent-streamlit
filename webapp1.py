@@ -133,20 +133,20 @@ with st.expander("❓ How This Works & Expected Fields", expanded=False):
 # Form with Expanders for Each Section
 with st.form(key='data_extraction_form'):
     
-    # 1. Applicant Skills (Expanded by default for immediate input)
-    st.subheader("🧠 1. Applicant Skills (For Match Score)")
-    with st.expander("Paste your key skills, technologies, and experience here.", expanded=True):
-        applicant_skills = st.text_area(
-            "Applicant Skills Input:",
-            #height=150,
-            height=50,
-            placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
-            key='applicant_skills',
-            label_visibility="collapsed" # Hide redundant label
-        )
+    # # 1. Applicant Skills (Expanded by default for immediate input)
+    # st.subheader("🧠 1. Applicant Skills (For Match Score)")
+    # with st.expander("Paste your key skills, technologies, and experience here.", expanded=True):
+    #     applicant_skills = st.text_area(
+    #         "Applicant Skills Input:",
+    #         #height=150,
+    #         height=50,
+    #         placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
+    #         key='applicant_skills',
+    #         label_visibility="collapsed" # Hide redundant label
+    #     )
 
     # 2. Recruiter Call Summary (Expanded by default for immediate input)
-    st.subheader("📞 2. Recruiter Call Summary")
+    st.subheader("📞 1. Recruiter Call Summary")
     with st.expander("Summarize your conversation with the recruiter:", expanded=True):
         call_details = st.text_input(
             "Call Details Input:",
@@ -156,13 +156,25 @@ with st.form(key='data_extraction_form'):
         )
 
     # 3. Full Job Description Text (Expanded by default for immediate input)
-    st.subheader("📄 3. Full Job Description Text")
+    st.subheader("📄 2. Full Job Description Text")
     with st.expander("Paste the full Job Description, email, or message here:", expanded=True):
         recruiter_text = st.text_area(
             "Recruiter Text Input:",
             height=350,
             placeholder="E.g., Dear [Name], We are looking for a Senior Full Stack Developer (React/Node.js) for our client, Acme Corp. in Bangalore (Hybrid)...",
             key='recruiter_text',
+            label_visibility="collapsed" # Hide redundant label
+        )
+
+      # 1. Applicant Skills (Expanded by default for immediate input)
+    st.subheader("🧠 3. Applicant Skills (For Match Score)")
+    with st.expander("Paste your key skills, technologies, and experience here.", expanded=True):
+        applicant_skills = st.text_area(
+            "Applicant Skills Input:",
+            #height=150,
+            height=20,
+            placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
+            key='applicant_skills',
             label_visibility="collapsed" # Hide redundant label
         )
 
