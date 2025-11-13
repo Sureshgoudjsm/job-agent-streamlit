@@ -2,7 +2,7 @@ import os
 import json
 import csv
 import io
-import pandas as pd # <-- NEW IMPORT for cleaner display
+import pandas as pd
 from dotenv import load_dotenv
 import google.generativeai as genai
 import streamlit as st
@@ -15,7 +15,7 @@ except KeyError:
     st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure your .env file is correctly set up.")
     st.stop()
 
-# --- 2. The AI Prompt (Unchanged) ---
+# --- 2. The AI Prompt (MODIFIED for Skill Extraction) ---
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided text (which may include call notes and email/JD details) and extract the following specific pieces of information.
 
@@ -40,6 +40,7 @@ You are an expert data extraction assistant for job seekers. Your task is to ana
 - "status": Current status (e.g., "Awaiting JD", "Interview Scheduled", "Selected", "Rejected").
 - "next_follow_up_date": When you plan to follow up.
 - "review_notes": Your personal comments or notes.
+- "extracted_keywords": A comma-separated list of the 5-10 most critical hard skills and technologies required for the role (e.g., Python, AWS, Kubernetes, React, SQL).
 
 **Input Text:**
 ---
@@ -59,7 +60,6 @@ def process_recruiter_text(text_to_process: str) -> dict:
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
         response = model.generate_content(prompt_with_input)
-        # Safely remove potential markdown and strip whitespace
         clean_response = response.text.strip().replace("```json", "").replace("```", "")
         parsed_json = json.loads(clean_response)
         return parsed_json
@@ -75,9 +75,9 @@ st.write("Paste your recruiter communication (emails, JDs, call notes) below to 
 # Add a help expander for transparency
 with st.expander("❓ How This Works & Expected Fields"):
     st.markdown("""
-        The AI analyzes the text you paste and uses a precise template to pull out **18 key data points** for your job tracking spreadsheet.
+        The AI analyzes the text you paste and uses a precise template to pull out **19 key data points** for your job tracking spreadsheet.
         
-        **Examples of fields extracted:** `hr_name`, `role_position`, `client_company`, `location`, `ctc_offered_expected`, `status`, etc.
+        **New Field:** The **`extracted_keywords`** field will provide a comma-separated list of critical skills (e.g., Python, AWS, Kubernetes).
         
         **Tip:** For the best results, include **dates**, **salaries**, and the **company name** in your input text.
     """)
@@ -117,22 +117,23 @@ if submitted:
                 st.success("Extraction complete! Review the results and download your CSV below.")
                 st.subheader("✅ Extracted Information Review")
                 
-                # --- NEW: Convert to DataFrame for a clean table view ---
+                # Convert to DataFrame for a clean table view
                 df_display = pd.DataFrame([structured_data_dict]).T
                 df_display.columns = ["Extracted Value"]
                 st.dataframe(df_display, use_container_width=True) # Display the table
 
                 st.divider()
                 
-                # --- CSV CREATION LOGIC ---
+                # --- CSV CREATION LOGIC with NEW HEADER ---
                 output = io.StringIO()
                 
-                # Define the column headers in the exact order for the CSV.
+                # Define the column headers including the new key
                 headers = [
                     "date_contacted", "hr_name", "phone_number", "email_id", "role_position",
                     "recruiter_company", "client_company", "location", "job_type", "mode_of_contact",
                     "interview_mode", "interview_scheduled_date", "round_1_details", "round_2_details",
-                    "ctc_offered_expected", "status", "next_follow_up_date", "review_notes"
+                    "ctc_offered_expected", "status", "next_follow_up_date", "review_notes",
+                    "extracted_keywords" # <-- NEW HEADER
                 ]
                 
                 writer = csv.DictWriter(output, fieldnames=headers)
