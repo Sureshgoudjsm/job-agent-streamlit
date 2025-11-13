@@ -60,7 +60,9 @@ def process_recruiter_text(text_to_process: str) -> dict:
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
         response = model.generate_content(prompt_with_input)
-        clean_response = response.text.strip().replace("```json", "").replace("```
+        #clean_response = response.text.strip().replace("```json", "").replace("```
+        clean_response = response.text.strip().replace("``````", "")
+                                                                      
         parsed_json = json.loads(clean_response)
         return parsed_json
     except json.JSONDecodeError:
