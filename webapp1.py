@@ -1,14 +1,13 @@
-# webapp.py (Version 5 - Comprehensive Tracking)
-
-# --- 1, 2 are unchanged ---
 import os
 import json
 import csv
 import io
+import pandas as pd # <-- NEW IMPORT for cleaner display
 from dotenv import load_dotenv
 import google.generativeai as genai
 import streamlit as st
 
+# --- 1. Configuration and Setup ---
 load_dotenv()
 try:
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
@@ -16,7 +15,7 @@ except KeyError:
     st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure your .env file is correctly set up.")
     st.stop()
 
-# --- 3. The AI Prompt (HEAVILY MODIFIED with your new fields) ---
+# --- 2. The AI Prompt (Unchanged) ---
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided text (which may include call notes and email/JD details) and extract the following specific pieces of information.
 
@@ -50,64 +49,85 @@ You are an expert data extraction assistant for job seekers. Your task is to ana
 **JSON Output:**
 """
 
-# --- 4. The Core Logic Function (Unchanged, but using your preferred model) ---
+# --- 3. The Core Logic Function (Unchanged) ---
 def process_recruiter_text(text_to_process: str) -> dict:
     """
     Sends text to the Gemini model, expects a JSON response, and parses it into a Python dictionary.
     """
-    # Using your preferred model, as requested.
-    #model = genai.GenerativeModel('gemini-1.5-flash')
-    model=genai.GenerativeModel('gemini-2.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
         response = model.generate_content(prompt_with_input)
+        # Safely remove potential markdown and strip whitespace
         clean_response = response.text.strip().replace("```json", "").replace("```", "")
         parsed_json = json.loads(clean_response)
         return parsed_json
     except json.JSONDecodeError:
-        return {"error": "The AI returned an invalid format. Please try again."}
+        return {"error": f"The AI returned an invalid JSON format. Raw output: {clean_response}"}
     except Exception as e:
         return {"error": f"An error occurred: {e}"}
 
-# --- 5. Building the Streamlit Web Interface (MODIFIED CSV HEADERS) ---
-#st.title("🤖 AI Job Agent")
-st.title("🤖 Usain and Jagan")
+# --- 4. Building the Streamlit Web Interface (IMPROVED UX) ---
+st.title("🤖 AI Job Agent")
+st.write("Paste your recruiter communication (emails, JDs, call notes) below to instantly extract structured tracking data.")
 
-st.write("Provide the key details from your conversation and paste any written info (like emails or JDs) to extract a summary.")
+# Add a help expander for transparency
+with st.expander("❓ How This Works & Expected Fields"):
+    st.markdown("""
+        The AI analyzes the text you paste and uses a precise template to pull out **18 key data points** for your job tracking spreadsheet.
+        
+        **Examples of fields extracted:** `hr_name`, `role_position`, `client_company`, `location`, `ctc_offered_expected`, `status`, etc.
+        
+        **Tip:** For the best results, include **dates**, **salaries**, and the **company name** in your input text.
+    """)
 
-st.subheader("1. On-Call Communication Summary")
-call_details = st.text_input(
-    "Summarize your call with the recruiter in one or two lines.",
-    placeholder="e.g., Spoke with John from Tech Recruiters about a Python role, salary is around 150k."
-)
+# Use st.form to group all inputs and control execution
+with st.form(key='data_extraction_form'):
+    
+    st.subheader("1. Call/Chat Summary (Optional, but helpful)")
+    call_details = st.text_input(
+        "Summarize your conversation with the recruiter in one or two lines:",
+        placeholder="e.g., Spoke with John from Tech Recruiters about a Python role, salary is around 150k.",
+        key='call_details'
+    )
 
-st.subheader("2. Paste Email, Job Description, or Other Info")
-recruiter_text = st.text_area(
-    "Paste the full text from emails, job descriptions, etc., here.", 
-    height=250
-)
+    st.subheader("2. Full Text Input (Required)")
+    recruiter_text = st.text_area(
+        "Paste the **full text** from the Job Description, email, or other source here.", 
+        height=350,
+        placeholder="E.g., Dear [Name], We are looking for a Senior Full Stack Developer (React/Node.js) for our client, Acme Corp. in Bangalore (Hybrid). The interview is scheduled for 2025-12-01. Salary range is 18-22 LPA...",
+        key='recruiter_text'
+    )
+    
+    # The submit button
+    submitted = st.form_submit_button("✨ Extract and Prepare CSV")
 
-if st.button("Extract Details"):
+if submitted:
+    
     combined_text = f"Call Summary: {call_details}\n\nDetailed Info:\n{recruiter_text}"
     
     if call_details.strip() or recruiter_text.strip():
         with st.spinner("🧠 The AI is analyzing the text..."):
             structured_data_dict = process_recruiter_text(combined_text)
             
-            st.subheader("Extracted Information")
-            
             if "error" in structured_data_dict:
                 st.error(structured_data_dict["error"])
             else:
-                st.json(structured_data_dict)
+                st.success("Extraction complete! Review the results and download your CSV below.")
+                st.subheader("✅ Extracted Information Review")
+                
+                # --- NEW: Convert to DataFrame for a clean table view ---
+                df_display = pd.DataFrame([structured_data_dict]).T
+                df_display.columns = ["Extracted Value"]
+                st.dataframe(df_display, use_container_width=True) # Display the table
+
                 st.divider()
                 
-                # --- NEW: CSV CREATION LOGIC with your new headers ---
+                # --- CSV CREATION LOGIC ---
                 output = io.StringIO()
                 
-                # Define the column headers in the exact order you want them in the CSV.
-                # This ensures the spreadsheet is always perfectly organized.
+                # Define the column headers in the exact order for the CSV.
                 headers = [
                     "date_contacted", "hr_name", "phone_number", "email_id", "role_position",
                     "recruiter_company", "client_company", "location", "job_type", "mode_of_contact",
@@ -128,5 +148,3 @@ if st.button("Extract Details"):
                 )
     else:
         st.warning("Please provide some information in at least one of the input boxes.")
-        
-
