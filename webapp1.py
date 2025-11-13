@@ -60,9 +60,13 @@ def process_recruiter_text(text_to_process: str) -> dict:
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
         response = model.generate_content(prompt_with_input)
-        #clean_response = response.text.strip().replace("```json", "").replace("```
-        clean_response = response.text.strip().replace("``````", "")
-                                                                      
+        # Clean response: remove surrounding code fences that AI sometimes adds despite instructions
+        clean_response = response.text.strip()
+        if clean_response.startswith('```json'):
+            clean_response = clean_response[7:].strip()
+        if clean_response.endswith('```'):
+            clean_response = clean_response[:-3].strip()
+                                                    
         parsed_json = json.loads(clean_response)
         return parsed_json
     except json.JSONDecodeError:
@@ -78,6 +82,7 @@ def create_ics_file(details: dict) -> str:
     recruiter = details.get("hr_name", "Recruiter")
     mode = details.get("interview_mode", "Mode Not Specified")
     try:
+        # Assuming date_str is in YYYY-MM-DD format as per prompt instruction
         start_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(hour=10, minute=0, second=0)
         end_date = start_date + datetime.timedelta(hours=1)
         dt_format = "%Y%m%dT%H%M%S"
@@ -111,57 +116,69 @@ END:VEVENT
 END:VCALENDAR"""
     return ics_content.replace('\n', '\r\n')
 
-# --- 5. Building the Streamlit Web Interface (With Expanders) ---
+# --- 5. Building the Streamlit Web Interface (Modified for Expanded Expanders) ---
 st.title("🤖 AI Job Agent")
 st.write("Analyze job details and your own skills simultaneously to generate a match score and tracking data.")
 
 # Help Section
 with st.expander("❓ How This Works & Expected Fields", expanded=False):
     st.markdown("""
-        The AI analyzes the Job Details and your skills to pull 22 key data points, including a Match Score and Proactive Prep Hint.
+        The AI analyzes the Job Details and your skills to pull 22 key data points, including a **Match Score** and **Proactive Prep Hint**.
 
-        New Fields: match_score, skill_gap_analysis, and prep_hint.
+        **New Fields:** `match_score`, `skill_gap_analysis`, and `prep_hint`.
 
-        Tip: For best results, put your resume/skills in the first section, and the full Job Description in the third section.
+        **Tip:** For best results, put your resume/skills in the first section, and the full Job Description in the third section.
     """)
 
 # Form with Expanders for Each Section
 with st.form(key='data_extraction_form'):
-
-    with st.expander("🧠 1. Applicant Skills (For Match Score)", expanded=False):
+    
+    # 1. Applicant Skills (Expanded by default for immediate input)
+    st.subheader("🧠 1. Applicant Skills (For Match Score)")
+    with st.expander("Paste your key skills, technologies, and experience here.", expanded=True):
         applicant_skills = st.text_area(
-            "Paste your key skills, technologies, and years of experience here.",
+            "Applicant Skills Input:",
             height=150,
             placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
-            key='applicant_skills'
+            key='applicant_skills',
+            label_visibility="collapsed" # Hide redundant label
         )
 
-    with st.expander("📞 2. Recruiter Call Summary", expanded=False):
+    # 2. Recruiter Call Summary (Expanded by default for immediate input)
+    st.subheader("📞 2. Recruiter Call Summary")
+    with st.expander("Summarize your conversation with the recruiter:", expanded=True):
         call_details = st.text_input(
-            "Summarize your conversation with the recruiter:",
+            "Call Details Input:",
             placeholder="e.g., Spoke with John from Tech Recruiters about a Python role, salary is around 150k.",
-            key='call_details'
+            key='call_details',
+            label_visibility="collapsed" # Hide redundant label
         )
 
-    with st.expander("📄 3. Full Job Description Text", expanded=False):
+    # 3. Full Job Description Text (Expanded by default for immediate input)
+    st.subheader("📄 3. Full Job Description Text")
+    with st.expander("Paste the full Job Description, email, or message here:", expanded=True):
         recruiter_text = st.text_area(
-            "Paste the full Job Description, email, or message here:",
+            "Recruiter Text Input:",
             height=350,
             placeholder="E.g., Dear [Name], We are looking for a Senior Full Stack Developer (React/Node.js) for our client, Acme Corp. in Bangalore (Hybrid)...",
-            key='recruiter_text'
+            key='recruiter_text',
+            label_visibility="collapsed" # Hide redundant label
         )
+
+    st.markdown("---") # Separator before the submit button
 
     submitted = st.form_submit_button("✨ Extract, Score, and Prepare Files")
 
 # --- 6. Processing Logic (Unchanged) ---
 if submitted:
+    # Combining inputs for the AI prompt
     combined_text = (
         f"--- APPLICANT SKILLS ---\n{applicant_skills}\n\n"
         f"--- JOB DETAILS ---\n"
         f"Call Summary: {call_details}\n\nDetailed Info:\n{recruiter_text}"
     )
 
-    if call_details.strip() or recruiter_text.strip():
+    if call_details.strip() or recruiter_text.strip() or applicant_skills.strip():
         with st.spinner("🧠 The AI is analyzing and scoring the fit..."):
             structured_data_dict = process_recruiter_text(combined_text)
 
@@ -171,33 +188,46 @@ if submitted:
                 st.success("Extraction and scoring complete! Review results and download your files below.")
                 st.subheader("✅ Extracted Information Review")
 
+                # Display Results in a DataFrame
                 df_display = pd.DataFrame([structured_data_dict]).T
                 df_display.columns = ["Extracted Value"]
                 st.dataframe(df_display, use_container_width=True)
 
                 st.divider()
+
+                # iCalendar Download Button
                 if structured_data_dict.get("interview_scheduled_date") not in ["Not specified", None, ""]:
                     ics_data = create_ics_file(structured_data_dict)
                     if ics_data:
                         st.download_button(
                             label="📅 Download Calendar Event (.ics)",
                             data=ics_data,
-                            file_name=f"interview_{structured_data_dict['client_company']}.ics",
+                            file_name=f"interview_{structured_data_dict.get('client_company', 'details')}.ics",
                             mime="text/calendar"
                         )
 
+                # CSV Download Button
                 output = io.StringIO()
-                headers = [
+                headers = list(structured_data_dict.keys()) # Use extracted keys dynamically
+                
+                # Check if all required headers are present, if not, use the full list as fallback
+                required_headers = [
                     "date_contacted", "hr_name", "phone_number", "email_id", "role_position",
                     "recruiter_company", "client_company", "location", "job_type", "mode_of_contact",
                     "interview_mode", "interview_scheduled_date", "round_1_details", "round_2_details",
                     "ctc_offered_expected", "status", "next_follow_up_date", "review_notes",
                     "extracted_keywords", "match_score", "skill_gap_analysis", "prep_hint"
                 ]
+                # Ensure the CSV writer uses the full header list to avoid missing columns
+                final_headers = required_headers
 
-                writer = csv.DictWriter(output, fieldnames=headers)
+                writer = csv.DictWriter(output, fieldnames=final_headers, extrasaction='ignore')
                 writer.writeheader()
-                writer.writerow(structured_data_dict)
+                
+                # Ensure all missing keys in the dictionary are filled with "" to prevent DictWriter errors
+                row_to_write = {key: structured_data_dict.get(key, "") for key in final_headers}
+                writer.writerow(row_to_write)
+                
                 csv_data = output.getvalue()
 
                 st.download_button(
