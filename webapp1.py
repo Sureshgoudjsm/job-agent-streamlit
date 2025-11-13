@@ -117,7 +117,7 @@ END:VCALENDAR"""
     return ics_content.replace('\n', '\r\n')
 
 # --- 5. Building the Streamlit Web Interface (Modified for Expanded Expanders) ---
-st.title("🤖 AI Job Agent")
+st.title("                        🤖 AI Job Agent")
 st.write("Analyze job details and your own skills simultaneously to generate a match score and tracking data.")
 
 # Help Section
