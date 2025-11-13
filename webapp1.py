@@ -8,6 +8,66 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import streamlit as st
 
+# --- 0. Streamlit Page Configuration and Custom CSS ---
+# Set the page title and icon
+st.set_page_config(
+    page_title="AI Job Agent",
+    page_icon="🤖",
+    layout="wide" # Use wide layout for more space
+)
+
+# Custom CSS to inject the modern look (inspired by your Tailwind vision)
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    :root {
+        --primary-color: #359EFF;
+        --background-dark: #0f1923;
+        --background-light: #f5f7f8;
+        --text-dark: #f5f7f8;
+        --text-light: #0f1923;
+        --input-bg-dark: #1e2a3a;
+        --input-bg-light: #ffffff;
+    }
+
+    /* Apply Inter font and clean background */
+    html, body, [class*="stApp"] {
+        font-family: 'Inter', sans-serif;
+        background-color: var(--background-light);
+        color: var(--text-light);
+    }
+    
+    /* Dark mode adjustments (if Streamlit is set to Dark) */
+    .st-emotion-cache-18ni7ap, .st-emotion-cache-czk5ad { /* Main app containers */
+        background-color: var(--background-dark);
+        color: var(--text-dark);
+    }
+    
+    /* Style input containers to look more like your design */
+    .st-emotion-cache-13rhd58, .st-emotion-cache-12fmw6v { /* Input/Textarea containers */
+        border-radius: 0.5rem;
+        padding: 1rem;
+        background-color: rgba(255, 255, 255, 0.05); /* Slight dark mode transparency */
+        border: 1px solid rgba(120, 120, 120, 0.2);
+    }
+    
+    /* Streamlit's default primary button style to match your primary color */
+    .stButton>button {
+        background-color: var(--primary-color);
+        color: white;
+        border-radius: 0.5rem;
+        padding: 0.5rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- 1. Configuration and Setup ---
 load_dotenv()
 try:
@@ -16,7 +76,7 @@ except KeyError:
     st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure your .env file is correctly set up.")
     st.stop()
 
-# --- 2. The AI Prompt (FINAL MODIFIED) ---
+# --- 2. The AI Prompt (Unchanged) ---
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts: 1) Job Details (JD, email, call notes) and 2) Applicant Skills (Resume/Summary).
 
@@ -120,12 +180,12 @@ END:VCALENDAR"""
 
     return ics_content.replace('\n', '\r\n')
 
-# --- 5. Building the Streamlit Web Interface (FINAL UX) ---
+# --- 5. Building the Streamlit Web Interface (FINAL UX WITH EXPANDERS) ---
 st.title("🤖 AI Job Agent")
 st.write("Analyze job details and your own skills simultaneously to generate a match score and tracking data.")
 
-# Add a help expander for transparency
-with st.expander("❓ How This Works & Expected Fields"):
+# Add a help expander for transparency (This one stays open initially for context)
+with st.expander("❓ How This Works & Expected Fields", expanded=False):
     st.markdown("""
         The AI analyzes the Job Details and your skills to pull **22 key data points**, including a **Match Score** and **Proactive Prep Hint**.
         
@@ -137,30 +197,37 @@ with st.expander("❓ How This Works & Expected Fields"):
 # Use st.form to group all inputs and control execution
 with st.form(key='data_extraction_form'):
     
-    st.subheader("1. Applicant Skills (For Match Score)")
-    applicant_skills = st.text_area(
-        "Paste your key skills, technologies, and years of experience here.",
-        height=150,
-        placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
-        key='applicant_skills'
-    )
+    # --- 1. Applicant Skills Expander ---
+    with st.expander("1. 👤 Applicant Skills (For Match Score)", expanded=True):
+        applicant_skills = st.text_area(
+            "Paste your key skills, technologies, and years of experience here.",
+            height=150,
+            placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification.",
+            key='applicant_skills',
+            label_visibility="collapsed" # Hide sub-label to keep it clean
+        )
 
-    st.subheader("2. Job Details & Communication")
-    call_details = st.text_input(
-        "Summarize your conversation with the recruiter in one or two lines:",
-        placeholder="e.g., Spoke with John from Tech Recruiters about a Python role, salary is around 150k.",
-        key='call_details'
-    )
+    # --- 2. Job Details & Communication Expander ---
+    with st.expander("2. 📞 Job Details & Communication", expanded=False):
+        call_details = st.text_input(
+            "Summarize your conversation with the recruiter in one or two lines:",
+            placeholder="e.g., Spoke with John from Tech Recruiters about a Python role, salary is around 150k.",
+            key='call_details',
+            label_visibility="collapsed"
+        )
 
-    st.subheader("3. Full Job Description Text")
-    recruiter_text = st.text_area(
-        "Paste the **full text** from the Job Description, email, or other source here.", 
-        height=350,
-        placeholder="E.g., Dear [Name], We are looking for a Senior Full Stack Developer (React/Node.js) for our client, Acme Corp. in Bangalore (Hybrid). The interview is scheduled for 2025-12-01. Salary range is 18-22 LPA...",
-        key='recruiter_text'
-    )
+    # --- 3. Full Job Description Text Expander ---
+    with st.expander("3. 📜 Full Job Description Text", expanded=False):
+        recruiter_text = st.text_area(
+            "Paste the **full text** from the Job Description, email, or other source here.", 
+            height=350,
+            placeholder="E.g., Dear [Name], We are looking for a Senior Full Stack Developer (React/Node.js) for our client, Acme Corp. in Bangalore (Hybrid). The interview is scheduled for 2025-12-01. Salary range is 18-22 LPA...",
+            key='recruiter_text',
+            label_visibility="collapsed"
+        )
     
     # The submit button
+    st.markdown("---") # Separator before the button
     submitted = st.form_submit_button("✨ Extract, Score, and Prepare Files")
 
 if submitted:
@@ -172,7 +239,7 @@ if submitted:
         f"Call Summary: {call_details}\n\nDetailed Info:\n{recruiter_text}"
     )
     
-    if call_details.strip() or recruiter_text.strip():
+    if call_details.strip() or recruiter_text.strip() or applicant_skills.strip(): # Check if any required field is filled
         with st.spinner("🧠 The AI is analyzing and scoring the fit..."):
             structured_data_dict = process_recruiter_text(combined_text)
             
@@ -212,7 +279,7 @@ if submitted:
                     "extracted_keywords", 
                     "match_score", 
                     "skill_gap_analysis",
-                    "prep_hint" # FINAL NEW HEADER
+                    "prep_hint"
                 ]
                 
                 writer = csv.DictWriter(output, fieldnames=headers)
