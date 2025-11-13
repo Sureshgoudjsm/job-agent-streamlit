@@ -8,6 +8,67 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import streamlit as st
 
+# --- 0. Streamlit Page Configuration and Custom CSS ---
+# Set the page title and icon
+st.set_page_config(
+    page_title="AI Job Agent",
+    page_icon="🤖",
+    layout="wide" # Use wide layout for more space
+)
+
+# Custom CSS to inject the modern look (inspired by your Tailwind vision)
+# This includes custom fonts and general styling for a dark/light theme approach.
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    :root {
+        --primary-color: #359EFF;
+        --background-dark: #0f1923;
+        --background-light: #f5f7f8;
+        --text-dark: #f5f7f8;
+        --text-light: #0f1923;
+        --input-bg-dark: #1e2a3a;
+        --input-bg-light: #ffffff;
+    }
+
+    /* Apply Inter font and clean background */
+    html, body, [class*="stApp"] {
+        font-family: 'Inter', sans-serif;
+        background-color: var(--background-light);
+        color: var(--text-light);
+    }
+    
+    /* Dark mode adjustments (if Streamlit is set to Dark) */
+    .st-emotion-cache-18ni7ap, .st-emotion-cache-czk5ad { /* Main app containers */
+        background-color: var(--background-dark);
+        color: var(--text-dark);
+    }
+    
+    /* Style input containers to look more like your design */
+    .st-emotion-cache-13rhd58, .st-emotion-cache-12fmw6v { /* Input/Textarea containers */
+        border-radius: 0.5rem;
+        padding: 1rem;
+        background-color: rgba(255, 255, 255, 0.05); /* Slight dark mode transparency */
+        border: 1px solid rgba(120, 120, 120, 0.2);
+    }
+    
+    /* Streamlit's default primary button style to match your primary color */
+    .stButton>button {
+        background-color: var(--primary-color);
+        color: white;
+        border-radius: 0.5rem;
+        padding: 0.5rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- 1. Configuration and Setup ---
 load_dotenv()
 try:
@@ -16,7 +77,7 @@ except KeyError:
     st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure your .env file is correctly set up.")
     st.stop()
 
-# --- 2. The AI Prompt (FINAL MODIFIED) ---
+# --- 2. The AI Prompt (Unchanged) ---
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts: 1) Job Details (JD, email, call notes) and 2) Applicant Skills (Resume/Summary).
 
