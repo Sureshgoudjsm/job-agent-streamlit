@@ -8,7 +8,22 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import streamlit as st
 import pandas as pd
-from filelock import FileLock
+
+# --- Safe import for FileLock (fallback if package not installed) ---
+try:
+    from filelock import FileLock
+    FILELOCK_AVAILABLE = True
+except Exception:
+    FILELOCK_AVAILABLE = False
+
+    class FileLock:
+        """Fallback no-op FileLock. Use only as temporary fallback — not safe for concurrent writes."""
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return None
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
 # --- Configuration ---
 load_dotenv()
@@ -22,7 +37,7 @@ except KeyError:
     st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure your .env file is correctly set up.")
     st.stop()
 
-# --- Prompt (unchanged from your version) ---
+# --- Prompt (unchanged from your version, minor normalization) ---
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts: 1) Job Details (JD, email, call notes) and 2) Applicant Skills (Resume/Summary).
 
@@ -104,7 +119,7 @@ def process_recruiter_text(text_to_process: str) -> dict:
     except Exception as e:
         return {"error": f"An error occurred: {e}"}
 
-# --- iCalendar generator (keeps your original logic, improved UID) ---
+# --- iCalendar generator ---
 def create_ics_file(details: dict) -> str:
     """Generates an iCalendar (.ics) string from extracted job details."""
     date_str = details.get("interview_scheduled_date", "Not specified")
@@ -178,7 +193,6 @@ def detect_duplicate(df: pd.DataFrame, candidate: dict, days_window: int = 14) -
     # email+role match (and recent)
     if matches.empty and email and email != "Not specified" and role and role != "Not specified":
         recent_cutoff = datetime.now() - timedelta(days=days_window)
-        # Parse timestamp column to datetime safely
         df_ts = df.copy()
         if "Timestamp" in df_ts.columns:
             try:
@@ -372,8 +386,9 @@ if submitted:
 # --- Footer / Help ---
 st.markdown("---")
 with st.expander("Tips & Notes"):
-    st.markdown("""
-    - Each submission creates a new row in `job_contacts.csv` (stored next to the app).  
+    st.markdown(f"""
+    - Each submission creates a new row in `{CSV_PATH}` (stored next to the app).  
+    - FileLock available: **{FILELOCK_AVAILABLE}**.{'  ' if FILELOCK_AVAILABLE else ' (fallback no-op in use — install filelock for safe concurrent writes)  '}
     - If you're deploying for multiple users, consider using Google Sheets, Airtable or a DB instead of a local CSV.  
     - Duplicate detection is heuristic-based (phone OR email+role within recent days). Tune `days_window` as needed.  
     - The AI is asked to return strict JSON; if parsing fails, check raw AI output for formatting issues.
