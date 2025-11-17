@@ -69,7 +69,8 @@ def process_recruiter_text(text_to_process: str) -> dict:
         return {"error": f"An error occurred: {e}"}
 
 # --- 4. Building the Streamlit Web Interface (IMPROVED UX) ---
-st.title("🤖 AI Job Agent")
+#st.title("🤖 AI Job Agent")
+st.title("Hi Roppa, Veresh ela unnaduu")
 st.write("Paste your recruiter communication (emails, JDs, call notes) below to instantly extract structured tracking data.")
 
 # Add a help expander for transparency
