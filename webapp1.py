@@ -13,13 +13,14 @@ load_dotenv()
 try:
     # Ensure this is replaced with your actual key name if different
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-except (KeyError, TypeError):
-    st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure it is correctly set up in your environment or a .env file.")
+except KeyError:
+    st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure your .env file is correctly set up.")
     st.stop()
 
 # --- 2. Session State Initialization ---
+# This simulates the multi-step navigation of your mind map
 if 'current_step' not in st.session_state:
-    st.session_state['current_step'] = 0 # 0: Landing, 1: Your Profile, 2: Job Description, 4: Results
+    st.session_state['current_step'] = 0 # 0: Landing, 1: Your Profile, 2: Job Description, 3: Skill Assessment/Submit, 4: Results
 if 'profile_data' not in st.session_state:
     st.session_state['profile_data'] = {}
 if 'job_details' not in st.session_state:
@@ -30,10 +31,11 @@ if 'extracted_data' not in st.session_state:
     st.session_state['extracted_data'] = None
 
 # --- 3. The AI Prompt (Unchanged) ---
+# NOTE: The combined text input structure for the model is designed to use all stored data.
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts: 1) Job Details (JD, email, call notes) and 2) Applicant Skills (Resume/Summary).
 
-**CRITICAL INSTRUCTION:** You MUST return the output as a single, valid JSON object. Do not add any explanatory text, markdown formatting, or code fences like ```json.
+**CRITICAL INSTRUCTION:** You MUST return the output as a single, valid JSON object. Do not add any explanatory text, markdown formatting, or code fences like ```
 
 **JSON Keys to use:**
 - "date_contacted": Date HR contacted you or you applied.
@@ -73,11 +75,13 @@ def process_recruiter_text(text_to_process: str) -> dict:
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
         response = model.generate_content(prompt_with_input)
+        # Clean response: remove surrounding code fences that AI sometimes adds despite instructions
         clean_response = response.text.strip()
         if clean_response.startswith('```json'):
             clean_response = clean_response[7:].strip()
         if clean_response.endswith('```'):
             clean_response = clean_response[:-3].strip()
+                                                      
         parsed_json = json.loads(clean_response)
         return parsed_json
     except json.JSONDecodeError:
@@ -87,28 +91,30 @@ def process_recruiter_text(text_to_process: str) -> dict:
 
 # --- 5. iCalendar File Generation Function (Unchanged) ---
 def create_ics_file(details: dict) -> str:
+    # Function body remains the same as your original code
     date_str = details.get("interview_scheduled_date", "Not specified")
     role = details.get("role_position", "Job Interview")
     client = details.get("client_company", "Client Company")
     recruiter = details.get("hr_name", "Recruiter")
     mode = details.get("interview_mode", "Mode Not Specified")
     try:
+        # Assuming date_str is in YYYY-MM-DD format as per prompt instruction
         start_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(hour=10, minute=0, second=0)
         end_date = start_date + datetime.timedelta(hours=1)
         dt_format = "%Y%m%dT%H%M%S"
         dt_start = start_date.strftime(dt_format)
         dt_end = end_date.strftime(dt_format)
         dt_stamp = datetime.datetime.now().strftime(dt_format)
-    except (ValueError, TypeError):
+    except ValueError:
         return ""
 
     summary = f"Interview: {role} @ {client}"
     description = (
-        f"Role: {role}\\n"
-        f"Company: {client}\\n"
-        f"Recruiter: {recruiter}\\n"
-        f"Round 1 Details: {details.get('round_1_details', 'N/A')}\\n"
-        f"Mode: {mode}\\n"
+        f"Role: {role}\n"
+        f"Company: {client}\n"
+        f"Recruiter: {recruiter}\n"
+        f"Round 1 Details: {details.get('round_1_details', 'N/A')}\n"
+        f"Mode: {mode}\n"
         f"HR Contact: {details.get('email_id', 'N/A')} / {details.get('phone_number', 'N/A')}"
     )
 
@@ -124,99 +130,55 @@ SUMMARY:{summary}
 DESCRIPTION:{description}
 END:VEVENT
 END:VCALENDAR"""
-    return ics_content
+    return ics_content.replace('\n', '\r\n')
 
-# --- 6. Streamlit Page Functions ---
+# --- 6. Streamlit Page Functions (Simulating Mind Map Nodes) ---
 
 def landing_page():
+    # Adjusted CSS to position content higher on the page (around the '1' mark)
     st.markdown(
         """
         <style>
-        /* Center the main container vertically */
-        .stApp {
+        /* This class ensures the content is centered horizontally and positioned vertically */
+        .center-content-moved-up {
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
-            height: 100vh;
-        }
-        /* Style for the clickable node */
-        .central-node {
-            border: 2px solid #333;
-            border-radius: 15px;
-            padding: 40px 60px;
+            justify-content: flex-start; 
+            /* Set a vertical padding/margin to position it below the navigation */
+            padding-top: 20vh; /* Adjust this value (e.g., 20vh) to move it higher or lower */
             text-align: center;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            background-color: #1E1E1E; /* Slightly different background */
         }
-        .central-node:hover {
-            border-color: #007BFF;
-            transform: scale(1.05);
-            box-shadow: 0 0 15px rgba(0, 123, 255, 0.5);
+        .welcome-text {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
         }
-        .main-title {
-            font-size: 3rem;
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: white;
-        }
-        .tagline {
-            font-size: 1.3rem;
-            color: #AAAAAA;
-        }
-        /* This is a trick to make a div clickable in Streamlit */
-        /* We make the button itself invisible and cover the whole area */
-        div[data-testid="stButton"] > button[kind="secondary"] {
-            background-color: transparent;
-            border: none;
-            padding: 0;
-            margin: 0;
-            width: 100%;
-            height: 100%;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1; /* Button is clickable */
-        }
-        .clickable-container {
-            position: relative; /* Needed for the button trick */
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        .subtitle-text {
+            font-size: 1.1rem;
+            color: #ccc;
+            margin-top: 0;
+            margin-bottom: 2rem;
         }
         </style>
+        <div class="center-content-moved-up">
         """,
         unsafe_allow_html=True
     )
-
-    # Use columns to center the clickable element
-    # --- THIS IS THE CORRECTED LINE ---
-    _, col_center, _ = st.columns(3)
-
-    with col_center:
-        # This container holds both the visible div and the invisible button
-        st.markdown('<div class="clickable-container">', unsafe_allow_html=True)
-
-        # The invisible button that triggers the action
-        if st.button(" ", key="start_button"): # The button label is a space
+    
+    # Text content moved inside the new centered div
+    st.markdown("<h2 class='welcome-text'>Welcome to the Job Agent 🤖</h2>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle-text'>One-click analysis for job fit, skill gaps, and interview prep.</p>", unsafe_allow_html=True)
+    
+    # Using a centered button to simulate the initial "Job Agent" node
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("✨ START ANALYSIS", key='start_btn', help="Click to expand the main Job Agent Node"):
             st.session_state['current_step'] = 1
             st.rerun()
 
-        # The visible HTML content that the user sees and clicks on
-        st.markdown(
-            """
-            <div class="central-node">
-                <div class="main-title">Job Agent</div>
-                <div class="tagline">Match, Analyze, Prepare</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-
-# --- Remaining Page Functions (Unchanged) ---
 def step_one_profile():
     st.markdown("## 1. Your Profile 👤")
     st.info("Input your core professional details. This helps the AI personalize the match analysis.")
@@ -226,8 +188,8 @@ def step_one_profile():
         st.session_state['profile_data']['email'] = st.text_input("Email", value=st.session_state['profile_data'].get('email', ''))
         st.session_state['profile_data']['linkedin'] = st.text_input("LinkedIn URL (Optional)", value=st.session_state['profile_data'].get('linkedin', ''))
         st.session_state['applicant_skills'] = st.text_area(
-            "Key Skills/Resume Summary (REQUIRED for Match Score):",
-            value=st.session_state['applicant_skills'],
+            "Key Skills/Resume Summary (REQUIRED for Match Score):", 
+            value=st.session_state['applicant_skills'], 
             height=150,
             placeholder="e.g., Python (5 years), AWS (3 years, Certified), Terraform, Docker, SQL, Scrum Master Certification."
         )
@@ -240,12 +202,13 @@ def step_one_profile():
                 st.session_state['current_step'] = 2
                 st.rerun()
 
-    st.button("⬅️ Back to Start", on_click=lambda: st.session_state.update({'current_step': 0}), key='back1')
+    st.button("⬅️ Back to Start", on_click=lambda: st.session_state.update({'current_step': 0, 'extracted_data': None}), key='back1')
 
 def step_two_job_desc():
     st.markdown("## 2. Job Description 📄")
     st.info("Paste the full Job Description, recruiter email, and any call notes here.")
 
+    # Combine the input for simplicity, matching the original combined_text logic
     recruiter_details = st.text_area(
         "Job Details, JD, and Recruiter Notes (REQUIRED):",
         value=st.session_state['job_details'],
@@ -254,11 +217,12 @@ def step_two_job_desc():
     )
 
     st.markdown("---")
-
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("⬅️ Back to Profile", key='back2'):
             st.session_state['current_step'] = 1
+            st.session_state['extracted_data'] = None
             st.rerun()
     with col2:
         if st.button("🚀 Analyze & View Match", key='submit_analysis'):
@@ -266,37 +230,45 @@ def step_two_job_desc():
                 st.error("Please paste the Job Description/Details to proceed.")
             else:
                 st.session_state['job_details'] = recruiter_details
-                st.session_state['current_step'] = 4
+                st.session_state['current_step'] = 4 # Skip "Skill Assessment" (Step 3) since it's now automated.
                 st.rerun()
 
+# This function combines the old skill assessment (which was automated) and the final results display.
 def step_three_results():
     st.markdown("## 3. Skill Assessment & Final Analysis ✨")
-
-    if st.session_state.get('extracted_data') is None:
+    
+    # 1. Generate Analysis if not already done
+    if st.session_state['extracted_data'] is None:
+        # Combine all necessary data for the AI call
         combined_text = (
             f"--- APPLICANT SKILLS ---\n{st.session_state['applicant_skills']}\n\n"
             f"--- JOB DETAILS ---\n{st.session_state['job_details']}"
         )
+        
         with st.spinner("🧠 The AI is running the match analysis and extracting data..."):
-            st.session_state['extracted_data'] = process_recruiter_text(combined_text)
-
+            st.session_state['extracted_data'] = structured_data_dict = process_recruiter_text(combined_text)
+    
     structured_data_dict = st.session_state['extracted_data']
 
     if "error" in structured_data_dict:
         st.error(structured_data_dict["error"])
-        st.button("↩️ Go Back to Edit Job Details", on_click=lambda: st.session_state.update({'current_step': 2, 'extracted_data': None}), key='back_from_error')
+        st.button("↩️ Go Back to Edit Job Details", on_click=lambda: st.session_state.update({'current_step': 2}), key='back_from_error')
         return
 
     st.success("Analysis complete! Review your Match Score and extracted job data below.")
     st.divider()
 
+    # --- Side-by-Side Layout for Final Output ---
     st.markdown("### 🎯 Match Summary")
-    col_score, col_prep = st.columns(2)
+    
+    col_score, col_prep = st.columns([1, 2])
+    
     with col_score:
         score = structured_data_dict.get('match_score', 'N/A')
+        # Use HTML/Markdown for a prominent score display
         st.markdown(f"""
-        <div style='text-align: center; border: 3px solid #007BFF; padding: 15px; border-radius: 10px; background-color: #0a1931;'>
-            <p style='font-size: 1.2rem; margin: 0; color: #AAAAAA;'>Overall Match Score</p>
+        <div style='text-align: center; border: 3px solid #007BFF; padding: 15px; border-radius: 10px; background-color: #e9f5ff;'>
+            <p style='font-size: 1.2rem; margin: 0;'>Overall Match Score</p>
             <h1 style='font-size: 3rem; margin: 0; color: #007BFF;'>{score}</h1>
         </div>
         """, unsafe_allow_html=True)
@@ -304,17 +276,22 @@ def step_three_results():
     with col_prep:
         st.markdown(f"**Skill Gap Analysis:** {structured_data_dict.get('skill_gap_analysis', 'No gaps identified.')}")
         st.markdown(f"**Proactive Prep Hint:** {structured_data_dict.get('prep_hint', 'No specific hint available.')}")
-
+    
     st.divider()
+
     st.markdown("### 📋 Full Extracted Job Data")
+
+    # Display Results in a DataFrame
     df_display = pd.DataFrame([structured_data_dict]).T
     df_display.columns = ["Extracted Value"]
     st.dataframe(df_display, use_container_width=True)
 
+    # --- Download Section ---
     st.divider()
     st.markdown("### 💾 Downloads")
     col_ics, col_csv = st.columns(2)
 
+    # iCalendar Download Button
     if structured_data_dict.get("interview_scheduled_date") not in ["Not specified", None, ""]:
         ics_data = create_ics_file(structured_data_dict)
         if ics_data:
@@ -326,6 +303,7 @@ def step_three_results():
                     mime="text/calendar"
                 )
 
+    # CSV Download Button
     output = io.StringIO()
     required_headers = [
         "date_contacted", "hr_name", "phone_number", "email_id", "role_position",
@@ -339,7 +317,7 @@ def step_three_results():
     row_to_write = {key: structured_data_dict.get(key, "") for key in required_headers}
     writer.writerow(row_to_write)
     csv_data = output.getvalue()
-
+    
     with col_csv:
         st.download_button(
             label="📄 Download Job Tracker (.csv)",
@@ -347,39 +325,51 @@ def step_three_results():
             file_name="job_details_extracted.csv",
             mime="text/csv"
         )
-
+    
     st.divider()
+    # Reset button
     if st.button("🔄 Start New Analysis", key='new_analysis_btn'):
-        # Reset all session state variables for a clean start
         st.session_state['current_step'] = 0
-        st.session_state['profile_data'] = {}
-        st.session_state['job_details'] = ""
-        st.session_state['applicant_skills'] = ""
         st.session_state['extracted_data'] = None
         st.rerun()
 
 # --- 7. Main App Flow Control ---
 def main():
-    st.set_page_config(layout="wide", page_title="AI Job Agent")
+    # Force a cleaner look
+    st.set_page_config(layout="centered", page_title="Job Agent")
+    
+    # Navigation Display (Mimicking the Mind Map Nodes)
+    nav_status = {
+        0: {"icon": "🏠", "label": "Start", "color": "#007BFF"},
+        1: {"icon": "👤", "label": "Your Profile", "color": "#28A745"},
+        2: {"icon": "📄", "label": "Job Description", "color": "#FFC107"},
+        4: {"icon": "✨", "label": "Analysis/Results", "color": "#DC3545"},
+    }
 
-    # The navigation bar is only shown after the landing page
-    if st.session_state['current_step'] > 0:
-        nav_status = {
-            0: {"icon": "🏠", "label": "Start"},
-            1: {"icon": "👤", "label": "Your Profile"},
-            2: {"icon": "📄", "label": "Job Description"},
-            4: {"icon": "✨", "label": "Analysis/Results"},
-        }
+    # Display Nav bar horizontally
+    cols = st.columns(len(nav_status))
+    for i, (step, data) in enumerate(nav_status.items()):
+        current = st.session_state['current_step']
+        # The color logic here needs to be slightly smarter to show active vs. completed steps
+        if current == step:
+            color = data['color'] # Active step
+        elif current > step:
+            color = "#6c757d" # Completed step (a subdued grey)
+        else:
+            color = "#AAAAAA" # Future step
         
-        cols = st.columns(len(nav_status))
-        for i, (step, data) in enumerate(nav_status.items()):
-            with cols[i]:
-                if st.button(f"{data['icon']} {data['label']}", key=f"nav_{step}", use_container_width=True):
-                    if step < st.session_state['current_step']:
-                        st.session_state['current_step'] = step
-                        st.session_state['extracted_data'] = None
-                        st.rerun()
-        st.divider()
+        with cols[i]:
+            # Only allow clicking on steps that are current or completed to prevent skipping ahead
+            if step <= current: # Allow navigating back to completed/current steps
+                if st.button(f"{data['icon']} {data['label']}", key=f'nav_btn_{step}'):
+                    st.session_state['current_step'] = step
+                    st.session_state['extracted_data'] = None # Clear results if navigating back
+                    st.rerun()
+            else:
+                 # Display non-clickable text for future steps
+                 st.markdown(f"<p style='color:{color}; text-align:center;'>{data['icon']} {data['label']}</p>", unsafe_allow_html=True)
+                 
+    st.divider()
 
     # Routing logic based on the session state
     if st.session_state['current_step'] == 0:
@@ -389,6 +379,7 @@ def main():
     elif st.session_state['current_step'] == 2:
         step_two_job_desc()
     elif st.session_state['current_step'] == 4:
+        # Step 3 (Skill Assessment) is now the automatic calculation/display in Step 4.
         step_three_results()
 
 if __name__ == "__main__":
