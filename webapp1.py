@@ -146,7 +146,7 @@ def landing_page():
             align-items: center;
             justify-content: flex-start; 
             /* REDUCED padding-top to move content up */
-            padding-top: 10vh; /* Adjusted from 20vh to 10vh */
+            padding-top: 5vh; /* Adjusted from 20vh to 10vh */
             text-align: center;
         }
         .welcome-text {
