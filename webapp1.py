@@ -135,7 +135,7 @@ END:VCALENDAR"""
 # --- 6. Streamlit Page Functions (Simulating Mind Map Nodes) ---
 
 def landing_page():
-    # Adjusted CSS to position content higher on the page (around the '1' mark)
+    # Adjusted CSS to position content much higher on the page (closer to the navigation)
     st.markdown(
         """
         <style>
@@ -145,8 +145,8 @@ def landing_page():
             flex-direction: column;
             align-items: center;
             justify-content: flex-start; 
-            /* Set a vertical padding/margin to position it below the navigation */
-            padding-top: 20vh; /* Adjust this value (e.g., 20vh) to move it higher or lower */
+            /* REDUCED padding-top to move content up */
+            padding-top: 10vh; /* Adjusted from 20vh to 10vh */
             text-align: center;
         }
         .welcome-text {
