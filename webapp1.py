@@ -7,13 +7,14 @@ import datetime
 from dotenv import load_dotenv
 import google.generativeai as genai
 import streamlit as st
+from streamlit_card import card # <-- Import the new component
 
 # --- 1. Configuration and Setup ---
 load_dotenv()
 try:
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 except (KeyError, TypeError):
-    st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure it is correctly set up in your environment or a .env file.")
+    st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please set it up in your environment or a .env file.")
     st.stop()
 
 # --- 2. Session State Initialization ---
@@ -42,6 +43,7 @@ You MUST return the output as a single, valid JSON object. Do not add any explan
 
 # --- 4. Core Logic & Calendar Functions (Unchanged) ---
 def process_recruiter_text(text_to_process: str) -> dict:
+    # This function remains unchanged
     model = genai.GenerativeModel('gemini-2.5-flash')
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
@@ -54,7 +56,7 @@ def process_recruiter_text(text_to_process: str) -> dict:
         return {"error": f"An error occurred: {e}"}
 
 def create_ics_file(details: dict) -> str:
-    # This function remains unchanged.
+    # This function remains unchanged
     date_str = details.get("interview_scheduled_date")
     if not date_str or date_str == "Not specified": return ""
     try:
@@ -80,17 +82,26 @@ def landing_page():
             align-items: center;
             justify-content: center;
             text-align: center;
-            padding-top: 5rem; /* Add space from the top nav bar */
+            padding-top: 8rem; /* Increased space from the top nav bar */
+            padding-bottom: 3rem;
         }
         .welcome-title {
-            font-size: 3rem;
+            font-size: 2.2rem; /* Adjusted font size */
             font-weight: bold;
         }
         .welcome-subtitle {
-            font-size: 1.2rem;
-            color: #AAAAAA;
+            font-size: 1.1rem; /* Adjusted font size */
+            color: #909090; /* Slightly lighter gray */
             margin-top: -10px;
             margin-bottom: 30px;
+        }
+        /* Main Start Button Styling */
+        div[data-testid="stButton"] > button {
+            border-radius: 10px;
+            padding: 15px 30px;
+            font-weight: bold;
+            line-height: 1.2;
+            border: 1px solid #444;
         }
         </style>
         <div class="welcome-container">
@@ -104,11 +115,12 @@ def landing_page():
     # Center the start button
     _, col2, _ = st.columns([3, 2, 3])
     with col2:
-        if st.button("✨ START ANALYSIS", use_container_width=True):
+        if st.button("✨ START\n\nANALYSIS", use_container_width=True):
             st.session_state['current_step'] = 1
             st.rerun()
 
 def step_one_profile():
+    # This function remains unchanged
     st.markdown("## 1. Your Profile 👤")
     st.info("Input your core professional details for personalized analysis.")
     with st.form(key='profile_form'):
@@ -123,6 +135,7 @@ def step_one_profile():
                 st.rerun()
 
 def step_two_job_desc():
+    # This function remains unchanged
     st.markdown("## 2. Job Description 📄")
     st.info("Paste the full Job Description, recruiter email, and any call notes.")
     st.session_state['job_details'] = st.text_area("Job Details, JD, and Recruiter Notes (REQUIRED):", st.session_state.get('job_details', ''), height=300, placeholder="Paste everything here...")
@@ -136,6 +149,7 @@ def step_two_job_desc():
                 st.rerun()
 
 def step_three_results():
+    # This function remains unchanged
     st.markdown("## 3. Analysis & Results ✨")
     if st.session_state.get('extracted_data') is None:
         combined_text = f"--- APPLICANT SKILLS ---\n{st.session_state['applicant_skills']}\n\n--- JOB DETAILS ---\n{st.session_state['job_details']}"
@@ -149,7 +163,6 @@ def step_three_results():
 
     st.success("Analysis complete!")
     st.divider()
-    # ... [rest of the results display code is unchanged] ...
     st.markdown("### 🎯 Match Summary")
     col_score, col_prep = st.columns(2)
     with col_score:
@@ -158,7 +171,7 @@ def step_three_results():
         st.markdown(f"**Skill Gap:** {data.get('skill_gap_analysis', 'N/A')}")
         st.markdown(f"**Prep Hint:** {data.get('prep_hint', 'N/A')}")
     st.divider()
-    st.markdown("### 📋 Full Extracted Data")
+    st.markdown("### 📋 Full Extracted Job Data")
     df = pd.DataFrame([data]).T.rename(columns={0: "Extracted Value"})
     st.dataframe(df, use_container_width=True)
     st.divider()
@@ -171,26 +184,6 @@ def step_three_results():
 def main():
     st.set_page_config(layout="centered", page_title="AI Job Agent")
 
-    # Custom CSS for navigation buttons
-    st.markdown("""
-        <style>
-            /* General button style */
-            div[data-testid="stHorizontalBlock"] > div .stButton > button {
-                background-color: transparent;
-                border: 1px solid #333;
-                color: #FFF;
-                padding: 8px 16px;
-                border-radius: 8px;
-            }
-            /* Style for the ACTIVE button */
-            div[data-testid="stHorizontalBlock"] > div .stButton > button.active-nav {
-                background-color: #FFF;
-                color: #000;
-                border: 1px solid #FFF;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
     nav_status = {
         0: {"icon": "🏠", "label": "Start"},
         1: {"icon": "👤", "label": "Your Profile"},
@@ -198,17 +191,36 @@ def main():
         4: {"icon": "✨", "label": "Analysis/Results"},
     }
 
-    # Display Navigation Bar
+    # Display Navigation Bar using st-card for better styling
     cols = st.columns(len(nav_status))
     for i, (step, data) in enumerate(nav_status.items()):
         with cols[i]:
             is_active = (st.session_state.current_step == step)
-            button_label = f"{data['icon']} {data['label']}"
-            # Use a hack to apply a class to the active button
-            if is_active:
-                st.markdown(f'<button class="active-nav" style="width:100%;">{button_label}</button>', unsafe_allow_html=True)
-            else:
-                st.button(button_label, key=f"nav_{step}", use_container_width=True)
+            
+            # Define styles for active and inactive states
+            card_styles = {
+                "card": {
+                    "width": "100%", "height": "50px", "border-radius": "10px",
+                    "background-color": "#E0E0E0" if is_active else "#2B2B2B",
+                    "border": "1px solid #444", "margin": "0", "padding": "0"
+                },
+                "text": {
+                    "font-family": "sans-serif", "font-size": "16px",
+                    "color": "#111" if is_active else "#FFF",
+                    "font-weight": "bold"
+                }
+            }
+            
+            clicked = card(
+                title=f"{data['icon']} {data['label']}",
+                text="", # No text needed, title is enough
+                styles=card_styles,
+                key=f"nav_{step}",
+                on_click=lambda s=step: st.session_state.update(current_step=s) if s < st.session_state.current_step else None
+            )
+            if clicked:
+                st.rerun()
+
     st.divider()
 
     # Page Routing
