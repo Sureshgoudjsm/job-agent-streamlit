@@ -97,9 +97,21 @@ def load_css():
         
         /* --- Remove Streamlit's default padding --- */
         .block-container {
-            padding: 2rem 2rem 2rem 2rem !important;
+            padding: 2rem 4rem 2rem 4rem !important;
         }
-
+        
+        /* --- START VIEW CENTERING --- */
+        .start-page-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center; /* Center vertically */
+            align-items: center; /* Center horizontally */
+            min-height: 70vh; 
+            text-align: center;
+            /* REDUCED GAP to bring button closer to text */
+            gap: 1rem; 
+        }
+        
         /* --- Custom Card Styling for Mind Map Nodes --- */
         .mind-map-card {
             background-color: #192b33;
@@ -145,7 +157,6 @@ def load_css():
             padding: 0.75rem 1.5rem;
             font-weight: 700;
             border: none;
-            width: 100%;
         }
         .stButton button:hover {
             background-color: #0f8ac9;
@@ -160,6 +171,7 @@ def load_css():
         .main-header {
             text-align: center;
             padding: 2rem 0;
+            margin-bottom: 2rem; 
         }
         .main-header h1 {
             font-size: 3rem;
@@ -169,6 +181,20 @@ def load_css():
         .main-header p {
             font-size: 1.1rem;
             color: #92b7c9;
+        }
+
+        /* --- Start View Header (Specific overrides) --- */
+        #start-header h1 {
+            font-size: 5rem; 
+            font-weight: 900;
+            margin-bottom: 0rem;
+        }
+        #start-header p {
+            font-size: 1.5rem; 
+            font-weight: 500;
+            color: #92b7c9;
+            /* REMOVED MARGIN to allow button to sit closer */
+            margin-bottom: 0rem; 
         }
         
         /* --- Results Styling --- */
@@ -193,16 +219,26 @@ def load_css():
 
 def draw_start_view():
     """Renders the initial view with the central 'Job Agent' node."""
-    st.markdown('<div class="main-header"><h1>Job Agent</h1><p>Intelligently Map Your Next Career Move</p></div>', unsafe_allow_html=True)
     
-    _, center_col, _ = st.columns([1, 1, 1])
-    with center_col:
-        if st.button("🚀 Start Mapping"):
+    # We use a custom container class defined in CSS to handle the centering
+    st.markdown('<div class="start-page-container">', unsafe_allow_html=True)
+
+    # Header content
+    st.markdown('<div id="start-header"><h1>Job Agent</h1><p>Intelligently Map Your Next Career Move</p></div>', unsafe_allow_html=True)
+    
+    # Button content 
+    # Used specific columns to center the button perfectly horizontally
+    _, btn_col, _ = st.columns([5, 2, 5]) 
+    with btn_col:
+         if st.button("🚀 Start Mapping", key="start_mapping_button", use_container_width=True):
             st.session_state.app_state['current_view'] = 'map'
             st.rerun()
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
 def draw_map_view():
     """Renders the main mind map interface for data input."""
+    # This view does NOT use the start-page-container, so it flows normally below the nav.
     st.markdown('<div class="main-header"><h2>Build Your Career Mind Map</h2><p>Complete the nodes below to generate your analysis.</p></div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3, gap="large")
@@ -242,19 +278,22 @@ def draw_map_view():
     # Disable button until required fields are filled
     is_ready = bool(st.session_state.app_state['profile_data'].strip() and st.session_state.app_state['job_description'].strip())
     
-    if st.button("✨ Generate Analysis", disabled=not is_ready):
-        # Combine all inputs for the AI
-        combined_text = (
-            f"--- APPLICANT SKILLS ---\n{st.session_state.app_state['profile_data']}\n\n"
-            f"--- JOB DETAILS ---\n{st.session_state.app_state['job_description']}\n\n"
-            f"--- ADDITIONAL NOTES ---\n{st.session_state.app_state['skills_data']}"
-        )
-        
-        with st.spinner("🧠 The AI is running the match analysis..."):
-            result = process_recruiter_text(combined_text)
-            st.session_state.app_state['analysis_result'] = result
-            st.session_state.app_state['current_view'] = 'results'
-            st.rerun()
+    # Place the "Generate Analysis" button across the bottom
+    _, center_col, _ = st.columns([1, 2, 1])
+    with center_col:
+        if st.button("✨ Generate Analysis", disabled=not is_ready, use_container_width=True):
+            # Combine all inputs for the AI
+            combined_text = (
+                f"--- APPLICANT SKILLS ---\n{st.session_state.app_state['profile_data']}\n\n"
+                f"--- JOB DETAILS ---\n{st.session_state.app_state['job_description']}\n\n"
+                f"--- ADDITIONAL NOTES ---\n{st.session_state.app_state['skills_data']}"
+            )
+            
+            with st.spinner("🧠 The AI is running the match analysis..."):
+                result = process_recruiter_text(combined_text)
+                st.session_state.app_state['analysis_result'] = result
+                st.session_state.app_state['current_view'] = 'results'
+                st.rerun()
 
 def draw_results_view():
     """Renders the final analysis results."""
@@ -289,9 +328,11 @@ def draw_results_view():
             st.subheader("💾 Downloads")
             # CSV Download
             output = io.StringIO()
-            writer = csv.DictWriter(output, fieldnames=result.keys())
+            # Use keys from the analysis result for headers, ensuring it's valid for DictWriter
+            required_keys = ["date_contacted", "hr_name", "phone_number", "email_id", "role_position", "recruiter_company", "client_company", "location", "job_type", "mode_of_contact", "interview_mode", "interview_scheduled_date", "round_1_details", "round_2_details", "ctc_offered_expected", "status", "next_follow_up_date", "review_notes", "extracted_keywords", "match_score", "skill_gap_analysis", "prep_hint"]
+            writer = csv.DictWriter(output, fieldnames=required_keys, extrasaction='ignore')
             writer.writeheader()
-            writer.writerow(result)
+            writer.writerow({k: result.get(k, "") for k in required_keys}) # Fill missing keys with empty string
             csv_data = output.getvalue()
             st.download_button(label="📄 Download Job Tracker (.csv)", data=csv_data, file_name="job_details.csv", mime="text/csv", use_container_width=True)
             
