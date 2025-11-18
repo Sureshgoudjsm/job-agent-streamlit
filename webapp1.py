@@ -128,7 +128,6 @@ END:VCALENDAR"""
 
 # --- 6. Streamlit Page Functions ---
 
-# --- [MODIFIED] This is the new landing page function ---
 def landing_page():
     st.markdown(
         """
@@ -192,7 +191,8 @@ def landing_page():
     )
 
     # Use columns to center the clickable element
-    _, col_center, _ = st.columns()
+    # --- THIS IS THE CORRECTED LINE ---
+    _, col_center, _ = st.columns(3)
 
     with col_center:
         # This container holds both the visible div and the invisible button
@@ -291,7 +291,7 @@ def step_three_results():
     st.divider()
 
     st.markdown("### 🎯 Match Summary")
-    col_score, col_prep = st.columns()
+    col_score, col_prep = st.columns(2)
     with col_score:
         score = structured_data_dict.get('match_score', 'N/A')
         st.markdown(f"""
@@ -371,16 +371,13 @@ def main():
             4: {"icon": "✨", "label": "Analysis/Results"},
         }
         
-        # Use st.columns to create a horizontal navigation bar
         cols = st.columns(len(nav_status))
         for i, (step, data) in enumerate(nav_status.items()):
             with cols[i]:
-                # Use a button for navigation
                 if st.button(f"{data['icon']} {data['label']}", key=f"nav_{step}", use_container_width=True):
-                    # Only allow navigation to previous steps
                     if step < st.session_state['current_step']:
                         st.session_state['current_step'] = step
-                        st.session_state['extracted_data'] = None # Clear results if going back
+                        st.session_state['extracted_data'] = None
                         st.rerun()
         st.divider()
 
