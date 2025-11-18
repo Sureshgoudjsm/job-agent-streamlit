@@ -100,15 +100,15 @@ def load_css():
             padding: 2rem 4rem 2rem 4rem !important; /* increased side padding for wide layout */
         }
         
-        /* --- START VIEW CENTERING (NEW) --- */
+        /* --- START VIEW CENTERING --- */
         .start-page-container {
             display: flex;
             flex-direction: column;
             justify-content: center; /* Center vertically */
             align-items: center; /* Center horizontally */
-            /* Use viewport height to ensure it fills the available screen space */
-            min-height: 80vh; 
+            min-height: 70vh; /* Reduced slightly to push content up a bit */
             text-align: center;
+            gap: 2rem; /* Adds specific space between title and button */
         }
         
         /* --- Custom Card Styling for Mind Map Nodes --- */
@@ -156,7 +156,6 @@ def load_css():
             padding: 0.75rem 1.5rem;
             font-weight: 700;
             border: none;
-            /* width: 100%; Removed this from general button style to prevent map view buttons from being huge, but keeping it for the nav if needed. */
         }
         .stButton button:hover {
             background-color: #0f8ac9;
@@ -167,11 +166,9 @@ def load_css():
             cursor: not-allowed;
         }
         
-        /* Specific style for the Start Mapping button to give it the right size/look */
-        #start_mapping_button button {
-            width: 15rem; /* Set explicit width */
-            height: 3.5rem; /* Set explicit height */
-            font-size: 1.25rem;
+        /* Override specifically for the Start Mapping button to center it and size it */
+        div[data-testid="stButton"] > button {
+           /* No specific override needed if we rely on flexbox centering in parent */
         }
 
         /* --- Header Styling --- */
@@ -191,16 +188,15 @@ def load_css():
         }
 
         /* --- Start View Header (Specific overrides) --- */
-        #start-header {
-            margin-bottom: 2rem;
-        }
         #start-header h1 {
-            font-size: 4rem; /* Larger font for main title */
+            font-size: 5rem; /* Larger font for main title */
             font-weight: 900;
+            margin-bottom: 0rem;
         }
         #start-header p {
             font-size: 1.5rem; /* Larger subtitle */
             font-weight: 500;
+            color: #92b7c9;
         }
         
         /* --- Results Styling --- */
@@ -232,11 +228,13 @@ def draw_start_view():
     # Header content
     st.markdown('<div id="start-header"><h1>Job Agent</h1><p>Intelligently Map Your Next Career Move</p></div>', unsafe_allow_html=True)
     
-    # Button content (using columns to ensure horizontal centering in the Streamlit structure)
-    _, center_col, _ = st.columns([1, 1, 1])
-    with center_col:
-        # Give the button a unique key/ID for custom sizing
-        if st.button("🚀 Start Mapping", key="start_mapping_button"):
+    # Button content 
+    # We create a container here to inject the button into the flex flow
+    # We use columns with a ratio that forces the middle column to be just wide enough for the button
+    # This trick centers the button horizontally within the flex container
+    _, btn_col, _ = st.columns([5, 2, 5]) 
+    with btn_col:
+         if st.button("🚀 Start Mapping", key="start_mapping_button", use_container_width=True):
             st.session_state.app_state['current_view'] = 'map'
             st.rerun()
 
