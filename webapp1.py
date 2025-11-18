@@ -18,14 +18,12 @@ st.set_page_config(
 # --- 2. Configuration and Setup ---
 load_dotenv()
 try:
-    # Ensure this is replaced with your actual key name if different
     genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 except (KeyError, TypeError):
     st.error("CRITICAL ERROR: GOOGLE_API_KEY not found. Please ensure it is correctly set up in your environment or a .env file.")
     st.stop()
 
 # --- 3. Session State Initialization ---
-# This dictionary holds the state of our app, mimicking a multi-page flow
 if 'app_state' not in st.session_state:
     st.session_state.app_state = {
         'current_view': 'start',  # 'start', 'map', 'results'
@@ -78,124 +76,99 @@ def create_ics_file(details: dict) -> str:
 # --- 6. UI Rendering Functions ---
 
 def load_css():
-    """Loads all custom CSS for the mind map UI."""
+    """Loads all custom CSS for the UI."""
     st.markdown("""
     <style>
-        /* --- Base & Fonts --- */
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap' );
         @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200' );
         
-        body {
-            font-family: 'Manrope', sans-serif;
-        }
+        body { font-family: 'Manrope', sans-serif; }
         
-        /* --- Main Layout & Background --- */
-        .stApp {
-            background-color: #101c22;
-            color: #fff;
-        }
+        .stApp { background-color: #101c22; color: #fff; }
         
-        /* --- Remove Streamlit's default padding --- */
-        .block-container {
-            padding: 2rem 2rem 2rem 2rem !important;
+        .block-container { padding: 1rem !important; }
+
+        /* --- Start View Specific Styling --- */
+        .start-view-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            height: 90vh; /* Full viewport height */
+        }
+        .start-view-container h1 {
+            font-size: 4rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+        }
+        .start-view-container p {
+            font-size: 1.2rem;
+            color: #92b7c9;
+            margin-bottom: 2rem;
+        }
+        /* Make the button container a specific width */
+        .start-view-container .stButton {
+            width: 200px; 
+        }
+        .start-view-container .stButton button {
+            background-color: #13a4ec;
+            font-size: 1rem;
         }
 
-        /* --- Custom Card Styling for Mind Map Nodes --- */
+        /* --- Map View Specific Styling --- */
+        .map-view-header { text-align: center; padding: 2rem 0; }
+        .map-view-header h2 { font-size: 2.5rem; font-weight: 800; }
+        .map-view-header p { font-size: 1.1rem; color: #92b7c9; }
+
         .mind-map-card {
-            background-color: #192b33;
-            border: 1px solid #325567;
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-            text-align: center;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            background-color: #192b33; border: 1px solid #325567; border-radius: 0.75rem;
+            padding: 1.5rem; text-align: center; transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
         .mind-map-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 10px 15px -3px rgba(19, 164, 236, 0.2), 0 4px 6px -4px rgba(19, 164, 236, 0.2);
+            box-shadow: 0 10px 15px -3px rgba(19, 164, 236, 0.2);
         }
-        .mind-map-card h2 {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: #fff;
-        }
-        .mind-map-card p {
-            color: #92b7c9;
-            font-size: 0.9rem;
-            margin-bottom: 1rem;
-        }
-        .mind-map-card .icon {
-            font-size: 2.5rem;
-            color: #13a4ec;
-        }
+        .mind-map-card h2 { font-size: 1.25rem; font-weight: 700; color: #fff; }
+        .mind-map-card p { color: #92b7c9; font-size: 0.9rem; margin-bottom: 1rem; }
+        .mind-map-card .icon { font-size: 2.5rem; color: #13a4ec; }
         
-        /* --- Text Area Styling --- */
         .stTextArea textarea {
-            background-color: #101c22;
-            border: 1px solid #325567;
-            color: #fff;
-            border-radius: 0.5rem;
+            background-color: #101c22; border: 1px solid #325567;
+            color: #fff; border-radius: 0.5rem;
         }
         
-        /* --- Button Styling --- */
         .stButton button {
-            background-color: #13a4ec;
-            color: white;
-            border-radius: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            font-weight: 700;
-            border: none;
-            width: 100%;
+            background-color: #13a4ec; color: white; border-radius: 0.75rem;
+            padding: 0.75rem 1.5rem; font-weight: 700; border: none; width: 100%;
         }
-        .stButton button:hover {
-            background-color: #0f8ac9;
-        }
-        .stButton button:disabled {
-            background-color: #233c48;
-            color: #5a6e78;
-            cursor: not-allowed;
-        }
+        .stButton button:hover { background-color: #0f8ac9; }
+        .stButton button:disabled { background-color: #233c48; color: #5a6e78; cursor: not-allowed; }
         
-        /* --- Header Styling --- */
-        .main-header {
-            text-align: center;
-            padding: 2rem 0;
-        }
-        .main-header h1 {
-            font-size: 3rem;
-            font-weight: 800;
-            letter-spacing: -0.033em;
-        }
-        .main-header p {
-            font-size: 1.1rem;
-            color: #92b7c9;
-        }
-        
-        /* --- Results Styling --- */
-        .results-card {
-            background-color: #111c22;
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-            border: 1px solid #325567;
-        }
+        /* --- Results View Styling --- */
+        .results-header { text-align: center; padding: 2rem 0; }
+        .results-header h2 { font-size: 2.5rem; font-weight: 800; }
+        .results-header p { font-size: 1.1rem; color: #92b7c9; }
         .stMetric {
-            background-color: #192b33;
-            border-radius: 0.5rem;
-            padding: 1rem;
-            border: 1px solid #325567;
+            background-color: #192b33; border-radius: 0.5rem; padding: 1rem;
+            border: 1px solid #325567; text-align: center;
         }
-        .stMetric > div > div > div {
-            font-size: 2.5rem !important;
-            color: #50E3C2 !important;
-        }
+        .stMetric > div > div > div { font-size: 3rem !important; color: #50E3C2 !important; }
     </style>
     """, unsafe_allow_html=True)
 
 def draw_start_view():
-    """Renders the initial view with the central 'Job Agent' node."""
-    st.markdown('<div class="main-header"><h1>Job Agent</h1><p>Intelligently Map Your Next Career Move</p></div>', unsafe_allow_html=True)
-    
-    _, center_col, _ = st.columns([1, 1, 1])
+    """Renders the initial, perfectly centered start view."""
+    st.markdown("""
+        <div class="start-view-container">
+            <h1>Job Agent</h1>
+            <p>Intelligently Map Your Next Career Move</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Use columns to create a container for the button and center it
+    _, center_col, _ = st.columns([3, 1, 3])
     with center_col:
         if st.button("🚀 Start Mapping"):
             st.session_state.app_state['current_view'] = 'map'
@@ -203,53 +176,32 @@ def draw_start_view():
 
 def draw_map_view():
     """Renders the main mind map interface for data input."""
-    st.markdown('<div class="main-header"><h2>Build Your Career Mind Map</h2><p>Complete the nodes below to generate your analysis.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="map-view-header"><h2>Build Your Career Mind Map</h2><p>Complete the nodes below to generate your analysis.</p></div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3, gap="large")
 
     with col1:
-        st.markdown("""
-            <div class="mind-map-card">
-                <span class="material-symbols-outlined icon">person</span>
-                <h2>Your Profile</h2>
-                <p>Paste your resume summary or key skills.</p>
-            </div>
-        """, unsafe_allow_html=True)
-        st.session_state.app_state['profile_data'] = st.text_area("Your Profile", height=200, key="profile_input", label_visibility="collapsed", placeholder="e.g., Python (5 years), AWS Certified, Project Management...")
+        st.markdown('<div class="mind-map-card"><span class="material-symbols-outlined icon">person</span><h2>Your Profile</h2><p>Paste your resume summary or key skills.</p></div>', unsafe_allow_html=True)
+        st.session_state.app_state['profile_data'] = st.text_area("Your Profile", height=200, key="profile_input", label_visibility="collapsed", placeholder="e.g., Python (5 years), AWS Certified...")
 
     with col2:
-        st.markdown("""
-            <div class="mind-map-card">
-                <span class="material-symbols-outlined icon">description</span>
-                <h2>Job Description</h2>
-                <p>Input the details of the role you're targeting.</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="mind-map-card"><span class="material-symbols-outlined icon">description</span><h2>Job Description</h2><p>Input the details of the role you\'re targeting.</p></div>', unsafe_allow_html=True)
         st.session_state.app_state['job_description'] = st.text_area("Job Description", height=200, key="jd_input", label_visibility="collapsed", placeholder="Paste the full job description here...")
 
     with col3:
-        st.markdown("""
-            <div class="mind-map-card">
-                <span class="material-symbols-outlined icon">assessment</span>
-                <h2>Skill Assessment</h2>
-                <p>Optionally, add any other relevant notes or skills.</p>
-            </div>
-        """, unsafe_allow_html=True)
-        st.session_state.app_state['skills_data'] = st.text_area("Skill Assessment", height=200, key="skills_input", label_visibility="collapsed", placeholder="Add any extra notes, call summaries, or specific skills to highlight.")
+        st.markdown('<div class="mind-map-card"><span class="material-symbols-outlined icon">assessment</span><h2>Skill Assessment</h2><p>Optionally, add any other relevant notes.</p></div>', unsafe_allow_html=True)
+        st.session_state.app_state['skills_data'] = st.text_area("Skill Assessment", height=200, key="skills_input", label_visibility="collapsed", placeholder="Add call summaries or specific skills...")
 
     st.markdown("---")
     
-    # Disable button until required fields are filled
     is_ready = bool(st.session_state.app_state['profile_data'].strip() and st.session_state.app_state['job_description'].strip())
     
     if st.button("✨ Generate Analysis", disabled=not is_ready):
-        # Combine all inputs for the AI
         combined_text = (
             f"--- APPLICANT SKILLS ---\n{st.session_state.app_state['profile_data']}\n\n"
             f"--- JOB DETAILS ---\n{st.session_state.app_state['job_description']}\n\n"
             f"--- ADDITIONAL NOTES ---\n{st.session_state.app_state['skills_data']}"
         )
-        
         with st.spinner("🧠 The AI is running the match analysis..."):
             result = process_recruiter_text(combined_text)
             st.session_state.app_state['analysis_result'] = result
@@ -258,17 +210,16 @@ def draw_map_view():
 
 def draw_results_view():
     """Renders the final analysis results."""
-    st.markdown('<div class="main-header"><h2>Job Match Analysis</h2><p>An at-a-glance analysis of your profile against the job description.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="results-header"><h2>Job Match Analysis</h2><p>An at-a-glance analysis of your profile against the job description.</p></div>', unsafe_allow_html=True)
     
     result = st.session_state.app_state['analysis_result']
     if not result or "error" in result:
-        st.error(result.get("error", "An unknown error occurred during analysis."))
+        st.error(result.get("error", "An unknown error occurred."))
         if st.button("⬅️ Go Back"):
             st.session_state.app_state['current_view'] = 'map'
             st.rerun()
         return
 
-    # Main 3-column layout for results
     col1, col2, col3 = st.columns([1, 2, 1], gap="large")
 
     with col1:
@@ -280,14 +231,12 @@ def draw_results_view():
     with col2:
         with st.container(border=True):
             st.subheader("📋 Full Extracted Data")
-            df_display = pd.DataFrame([result]).T
-            df_display.columns = ["Extracted Value"]
+            df_display = pd.DataFrame([result]).T.rename(columns={0: "Extracted Value"})
             st.dataframe(df_display, use_container_width=True)
 
     with col3:
         with st.container(border=True):
             st.subheader("💾 Downloads")
-            # CSV Download
             output = io.StringIO()
             writer = csv.DictWriter(output, fieldnames=result.keys())
             writer.writeheader()
@@ -295,21 +244,13 @@ def draw_results_view():
             csv_data = output.getvalue()
             st.download_button(label="📄 Download Job Tracker (.csv)", data=csv_data, file_name="job_details.csv", mime="text/csv", use_container_width=True)
             
-            # Calendar Download
             ics_data = create_ics_file(result)
             if ics_data:
                 st.download_button(label="📅 Download Calendar Event (.ics)", data=ics_data, file_name="interview.ics", mime="text/calendar", use_container_width=True)
 
     st.markdown("---")
     if st.button("🔄 Start New Analysis"):
-        # Reset the entire state
-        st.session_state.app_state = {
-            'current_view': 'start',
-            'profile_data': "",
-            'job_description': "",
-            'skills_data': "",
-            'analysis_result': None
-        }
+        st.session_state.app_state = {'current_view': 'start', 'profile_data': "", 'job_description': "", 'skills_data': "", 'analysis_result': None}
         st.rerun()
 
 # --- 7. Main App Router ---
