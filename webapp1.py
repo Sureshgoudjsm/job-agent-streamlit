@@ -141,8 +141,7 @@ st.markdown(
     </style>
     
     <div class="center-content">
-        
-        <h1 class="title-text">Testing </h1>
+        <h1 class="title-text">Testing</h1>
         <p class="subtitle-text">Analyze job details and your own skills simultaneously to generate a match score and tracking data.</p>
     </div>
     """, 
