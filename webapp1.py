@@ -9,6 +9,14 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import streamlit as st
 
+# Try to import Google Sheets libs (optional)
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    HAS_GSHEETS_LIBS = True
+except ImportError:
+    HAS_GSHEETS_LIBS = False
+
 # --- 1. Page Configuration (MUST be the first Streamlit command) ---
 st.set_page_config(
     layout="wide",
@@ -35,6 +43,144 @@ genai.configure(api_key=api_key)
 def get_model():
     """Return a cached Gemini model instance."""
     return genai.GenerativeModel('gemini-2.5-flash')
+
+# --- Google Sheets config (optional) ---
+
+# Field order for saving rows to the sheet
+FIELD_ORDER = [
+    "date_contacted",
+    "hr_name",
+    "phone_number",
+    "email_id",
+    "role_position",
+    "recruiter_company",
+    "client_company",
+    "location",
+    "job_type",
+    "mode_of_contact",
+    "interview_mode",
+    "interview_scheduled_date",
+    "round_1_details",
+    "round_2_details",
+    "ctc_offered_expected",
+    "status",
+    "next_follow_up_date",
+    "review_notes",
+    "extracted_keywords",
+    "match_score",
+    "skill_gap_analysis",
+    "prep_hint",
+]
+
+def _get_gsheets_creds_and_id():
+    """
+    Try to read Google Sheets credentials and sheet ID from st.secrets.
+    Returns (creds_dict, sheet_id) or (None, None) if not available.
+
+    Secrets expected:
+      GOOGLE_SHEET_ID = "your_sheet_id_here"
+      GOOGLE_SERVICE_ACCOUNT = "{...full JSON of service account...}"
+    """
+    try:
+        sheet_id = st.secrets.get("GOOGLE_SHEET_ID", None)
+        sa_info = st.secrets.get("GOOGLE_SERVICE_ACCOUNT", None)
+
+        if not sheet_id or not sa_info:
+            return None, None
+
+        # Secrets can be a dict or a JSON string; handle both
+        if isinstance(sa_info, str):
+            creds_dict = json.loads(sa_info)
+        else:
+            creds_dict = dict(sa_info)
+
+        return creds_dict, sheet_id
+    except Exception:
+        return None, None
+
+@st.cache_resource
+def get_gsheets_worksheet():
+    """
+    Returns a gspread worksheet (sheet1) if configured, else None.
+    The sheet will have a header row created automatically if empty.
+    """
+    if not HAS_GSHEETS_LIBS:
+        return None
+
+    creds_dict, sheet_id = _get_gsheets_creds_and_id()
+    if not creds_dict or not sheet_id:
+        return None
+
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(creds)
+
+    sh = client.open_by_key(sheet_id)
+    ws = sh.sheet1  # use the first worksheet; change if you want named sheet
+
+    # Ensure headers exist
+    try:
+        existing_values = ws.get_all_values()
+        if not existing_values:
+            headers = ["timestamp_utc"] + FIELD_ORDER
+            ws.append_row(headers, value_input_option="USER_ENTERED")
+    except Exception:
+        # If any error fetching rows, skip header logic
+        pass
+
+    return ws
+
+def save_history_to_gsheets(result: dict):
+    """
+    Append a single analysis result as a new row to Google Sheets.
+    Silently skips if Sheets is not configured.
+    """
+    try:
+        ws = get_gsheets_worksheet()
+        if ws is None:
+            return  # Sheets not configured; do nothing
+
+        timestamp = datetime.datetime.utcnow().isoformat()
+
+        row = [timestamp]
+        for key in FIELD_ORDER:
+            row.append(result.get(key, ""))
+
+        ws.append_row(row, value_input_option="USER_ENTERED")
+    except Exception as e:
+        # Don't crash the app if Sheets logging fails
+        st.warning(f"Could not save to Google Sheets: {e}")
+
+def load_history_dataframe() -> pd.DataFrame:
+    """
+    Load full history as a DataFrame.
+    1) Try Google Sheets (preferred, persistent)
+    2) If not available/empty, fall back to in-session history
+    """
+    # 1) Try Google Sheets
+    df = None
+    try:
+        ws = get_gsheets_worksheet()
+    except Exception:
+        ws = None
+
+    if ws is not None:
+        try:
+            records = ws.get_all_records()
+            if records:
+                df = pd.DataFrame(records)
+        except Exception as e:
+            st.warning(f"Could not load history from Google Sheets: {e}")
+
+    # 2) Fallback: in-session history
+    if (df is None or df.empty) and st.session_state.history:
+        df = pd.DataFrame(st.session_state.history)
+
+    # 3) Ensure we always return a DataFrame
+    if df is None:
+        df = pd.DataFrame()
+
+    return df
 
 # --- 3. Session State Initialization ---
 def reset_app_state():
@@ -435,6 +581,8 @@ def draw_map_view():
             st.session_state.app_state['analysis_result'] = result
             if "error" not in result:
                 st.session_state.history.append(result)
+                # Save to Google Sheets (if configured)
+                save_history_to_gsheets(result)
             st.session_state.app_state['current_view'] = 'results'
             st.rerun()
 
@@ -559,6 +707,118 @@ def draw_results_view():
             reset_app_state()
             st.rerun()
 
+def draw_history_view():
+    """Show a UX-friendly history view (from Google Sheets or session)."""
+    st.markdown(
+        '<div class="main-header">'
+        '<h2>📊 Job History Dashboard</h2>'
+        '<p>Explore all your past analyses stored in Google Sheets (or this session).</p>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    df = load_history_dataframe()
+
+    if df.empty:
+        st.info("No history found yet. Run at least one analysis and it will appear here.")
+        return
+
+    # Try to parse timestamp column if it exists
+    if "timestamp_utc" in df.columns:
+        df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], errors="coerce")
+
+    # --- Metrics row ---
+    with st.container():
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric("Total Records", len(df))
+
+        if "role_position" in df.columns:
+            col2.metric("Unique Roles", df["role_position"].fillna("").nunique())
+        else:
+            col2.metric("Unique Roles", "-")
+
+        if "status" in df.columns:
+            col3.metric("Statuses", df["status"].fillna("").nunique())
+        else:
+            col3.metric("Statuses", "-")
+
+    st.markdown("---")
+
+    # --- Filters ---
+    with st.container():
+        st.subheader("🔍 Filter History")
+
+        col_f1, col_f2 = st.columns([2, 1])
+
+        with col_f1:
+            text_query = st.text_input(
+                "Search by role, recruiter, or client",
+                placeholder="e.g. Python, Accenture, Data Engineer..."
+            )
+
+        with col_f2:
+            if "status" in df.columns:
+                all_statuses = sorted([s for s in df["status"].dropna().unique() if s])
+            else:
+                all_statuses = []
+
+            status_filter = st.multiselect(
+                "Status filter",
+                options=all_statuses,
+                default=all_statuses
+            )
+
+        # Optional date filter if we have timestamps
+        if "timestamp_utc" in df.columns and df["timestamp_utc"].notna().any():
+            min_date = df["timestamp_utc"].min().date()
+            max_date = df["timestamp_utc"].max().date()
+            date_range = st.slider(
+                "Date range (UTC)",
+                min_value=min_date,
+                max_value=max_date,
+                value=(min_date, max_date)
+            )
+        else:
+            date_range = None
+
+    # --- Apply filters ---
+    mask = pd.Series(True, index=df.index)
+
+    if text_query:
+        q = text_query.lower()
+        cols_to_search = []
+        for name in ["role_position", "recruiter_company", "client_company"]:
+            if name in df.columns:
+                cols_to_search.append(df[name].fillna("").str.lower())
+
+        if cols_to_search:
+            combined = cols_to_search[0].str.contains(q)
+            for extra_col in cols_to_search[1:]:
+                combined = combined | extra_col.str.contains(q)
+            mask &= combined
+
+    if all_statuses and status_filter:
+        if "status" in df.columns:
+            mask &= df["status"].fillna("").isin(status_filter)
+
+    if date_range and "timestamp_utc" in df.columns:
+        start, end = date_range
+        mask &= (df["timestamp_utc"].dt.date >= start) & (df["timestamp_utc"].dt.date <= end)
+
+    df_filtered = df[mask].copy()
+
+    st.markdown(f"Showing **{len(df_filtered)}** records after filters.")
+    st.markdown("---")
+
+    # --- Table ---
+    st.subheader("🧾 Detailed History")
+    st.dataframe(
+        df_filtered,
+        use_container_width=True,
+        hide_index=True
+    )
+
 # --- 8. Main App Router ---
 
 def main():
@@ -570,14 +830,36 @@ def main():
             "Turn messy JDs, emails, and call notes into a **structured job tracker** "
             "with follow-up dates and interview events."
         )
-        st.markdown("**Steps:**")
+
+        # Mode toggle: Analyze vs History
+        mode = st.radio(
+            "Mode",
+            ["Analyze", "History"],
+            index=0
+        )
+
+        st.markdown("**Steps (Analyze mode):**")
         st.markdown("1. Paste your profile & the job details\n2. Click *Generate Analysis*\n3. Download CSV / Calendar")
+
+        # Optional indicator for Google Sheets
+        creds_dict, sheet_id = _get_gsheets_creds_and_id()
+        if HAS_GSHEETS_LIBS and creds_dict and sheet_id:
+            st.success("Google Sheets logging: ON")
+        else:
+            st.info("Google Sheets logging: OFF (configure GOOGLE_SHEET_ID & GOOGLE_SERVICE_ACCOUNT)")
+
         st.markdown("---")
         if st.session_state.app_state.get('analysis_result'):
             st.markdown("**Last Match Score:**")
             last = st.session_state.app_state['analysis_result']
             st.write(last.get('match_score', 'N/A'))
 
+    # If user chose History, skip normal router
+    if mode == "History":
+        draw_history_view()
+        return
+
+    # Normal flow: start/map/results
     view = st.session_state.app_state['current_view']
 
     if view == 'start':
