@@ -44,7 +44,9 @@ def get_model():
     """Return a cached Gemini model instance."""
     return genai.GenerativeModel('gemini-2.5-flash')
 
-# --- Google Sheets config (optional) ---
+# -------------------------------------------------------------------
+#  GOOGLE SHEETS CONFIG  (used as a persistent "database")
+# -------------------------------------------------------------------
 
 # Field order for saving rows to the sheet
 FIELD_ORDER = [
@@ -182,8 +184,15 @@ def load_history_dataframe() -> pd.DataFrame:
 
     return df
 
-# --- 3. Session State Initialization ---
+# -------------------------------------------------------------------
+#  SESSION STATE INITIALIZATION  (all app-level state lives here)
+# -------------------------------------------------------------------
+
 def reset_app_state():
+    """
+    Reset the main "app_state" dict in session_state.
+    This controls the mini flow: start -> map -> results
+    """
     st.session_state.app_state = {
         'current_view': 'start',  # 'start', 'map', 'results'
         'profile_data': "",
@@ -192,13 +201,22 @@ def reset_app_state():
         'analysis_result': None,
     }
 
+# --- Session: main app_state dict (view + input + result) ---
 if 'app_state' not in st.session_state:
     reset_app_state()
 
+# --- Session: in-memory history (for this browser session only) ---
 if 'history' not in st.session_state:
     st.session_state.history = []
 
-# --- 4. The AI Prompt (short Prep & Gap rules) ---
+# --- Session: current mode ("Analyze" or "History") for sidebar buttons ---
+if "mode" not in st.session_state:
+    st.session_state["mode"] = "Analyze"  # default view
+
+# -------------------------------------------------------------------
+#  AI PROMPT  (Gemini extraction)
+# -------------------------------------------------------------------
+
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts: 
 1) Job Details (JD, email, call notes) and 
@@ -253,7 +271,9 @@ Do not add any explanatory text, markdown formatting, or code fences.
 **JSON Output (ONLY the JSON object, nothing else):**
 """
 
-# --- 5. Core Logic & Calendar Functions ---
+# -------------------------------------------------------------------
+#  CORE LOGIC & HELPERS
+# -------------------------------------------------------------------
 
 def safe_json_from_response(text: str) -> dict:
     """
@@ -286,6 +306,9 @@ def keep_first_sentences(text: str, max_sentences: int = 3) -> str:
     return trimmed
 
 def process_recruiter_text(text_to_process: str) -> dict:
+    """
+    Call Gemini with the extraction prompt and parse JSON.
+    """
     model = get_model()
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
@@ -350,7 +373,23 @@ def create_ics_file(details: dict) -> str:
     except (ValueError, TypeError):
         return ""
 
-# --- 6. UI Styling ---
+def sanitize_df_for_streamlit(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert any list/dict/set/tuple values in a DataFrame to JSON strings
+    so that pyarrow/Streamlit can render it safely.
+    """
+    df = df.copy()
+    for col in df.columns:
+        if df[col].map(lambda x: isinstance(x, (dict, list, set, tuple))).any():
+            df[col] = df[col].map(
+                lambda x: json.dumps(x, ensure_ascii=False)
+                if isinstance(x, (dict, list, set, tuple)) else x
+            )
+    return df
+
+# -------------------------------------------------------------------
+#  UI STYLING
+# -------------------------------------------------------------------
 
 def load_css():
     """Loads all custom CSS for the mind map UI."""
@@ -465,7 +504,9 @@ def load_css():
     </style>
     """, unsafe_allow_html=True)
 
-# --- 7. UI Rendering Functions ---
+# -------------------------------------------------------------------
+#  UI RENDERING: START / MAP / RESULTS / HISTORY
+# -------------------------------------------------------------------
 
 def draw_start_view():
     """Renders the initial view with the central 'Job Agent' node."""
@@ -487,6 +528,7 @@ def draw_start_view():
     _, center_col, _ = st.columns([1, 1, 1])
     with center_col:
         if st.button("🚀 Start Mapping"):
+            # --- Session: move flow from start -> map ---
             st.session_state.app_state['current_view'] = 'map'
             st.rerun()
 
@@ -518,6 +560,7 @@ def draw_map_view():
             label_visibility="collapsed",
             placeholder="e.g., 5+ years in Python, data analysis, SQL, AWS; experience in fintech..."
         )
+        # --- Session: store user profile text ---
         st.session_state.app_state['profile_data'] = profile_text
         st.caption(f"{len(profile_text)} characters")
 
@@ -537,6 +580,7 @@ def draw_map_view():
             label_visibility="collapsed",
             placeholder="Paste the full job description, email, or call summary here..."
         )
+        # --- Session: store JD text ---
         st.session_state.app_state['job_description'] = jd_text
         st.caption(f"{len(jd_text)} characters")
 
@@ -556,6 +600,7 @@ def draw_map_view():
             label_visibility="collapsed",
             placeholder="Add extra notes, call summaries, expected CTC, notice period, etc."
         )
+        # --- Session: store extra notes ---
         st.session_state.app_state['skills_data'] = skills_text
         st.caption(f"{len(skills_text)} characters")
 
@@ -578,11 +623,17 @@ def draw_map_view():
 
         with st.spinner("🧠 The AI is running the match & extraction analysis..."):
             result = process_recruiter_text(combined_text)
+
+            # --- Session: store latest analysis result ---
             st.session_state.app_state['analysis_result'] = result
+
             if "error" not in result:
+                # --- Session: append to in-memory history ---
                 st.session_state.history.append(result)
-                # Save to Google Sheets (if configured)
+                # Persist in Google Sheets (if configured)
                 save_history_to_gsheets(result)
+
+            # --- Session: move flow to results view ---
             st.session_state.app_state['current_view'] = 'results'
             st.rerun()
 
@@ -656,6 +707,7 @@ def draw_results_view():
             st.subheader("📋 Full Extracted Data")
             df_display = pd.DataFrame([result]).T
             df_display.columns = ["Extracted Value"]
+            df_display = sanitize_df_for_streamlit(df_display)
             st.dataframe(df_display, use_container_width=True)
 
     with col2:
@@ -692,9 +744,11 @@ def draw_results_view():
 
     st.markdown("---")
 
+    # Session history table (this session only)
     if st.session_state.history:
         with st.expander("🧾 View this session's history"):
             hist_df = pd.DataFrame(st.session_state.history)
+            hist_df = sanitize_df_for_streamlit(hist_df)
             st.dataframe(hist_df, use_container_width=True)
 
     col_back, col_new = st.columns(2)
@@ -704,7 +758,7 @@ def draw_results_view():
             st.rerun()
     with col_new:
         if st.button("🔄 Start New Analysis"):
-            reset_app_state()
+            reset_app_state()  # --- Session: reset full flow + inputs ---
             st.rerun()
 
 def draw_history_view():
@@ -807,6 +861,7 @@ def draw_history_view():
         mask &= (df["timestamp_utc"].dt.date >= start) & (df["timestamp_utc"].dt.date <= end)
 
     df_filtered = df[mask].copy()
+    df_filtered = sanitize_df_for_streamlit(df_filtered)
 
     st.markdown(f"Showing **{len(df_filtered)}** records after filters.")
     st.markdown("---")
@@ -819,7 +874,9 @@ def draw_history_view():
         hide_index=True
     )
 
-# --- 8. Main App Router ---
+# -------------------------------------------------------------------
+#  MAIN APP ROUTER
+# -------------------------------------------------------------------
 
 def main():
     load_css()
@@ -831,12 +888,23 @@ def main():
             "with follow-up dates and interview events."
         )
 
-        # Mode toggle: Analyze vs History
-        mode = st.radio(
-            "Mode",
-            ["Analyze", "History"],
-            index=0
-        )
+        # --- MODE SWITCH AS BIG BUTTONS (stored in session_state['mode']) ---
+        st.markdown("#### Mode")
+
+        col_m1, col_m2 = st.columns(2)
+
+        with col_m1:
+            if st.button("Analyze", use_container_width=True, key="mode_analyze_btn"):
+                st.session_state["mode"] = "Analyze"
+                st.rerun()
+
+        with col_m2:
+            if st.button("History", use_container_width=True, key="mode_history_btn"):
+                st.session_state["mode"] = "History"
+                st.rerun()
+
+        # Tiny label so user sees which mode is active
+        st.caption(f"Current mode: **{st.session_state['mode']}**")
 
         st.markdown("**Steps (Analyze mode):**")
         st.markdown("1. Paste your profile & the job details\n2. Click *Generate Analysis*\n3. Download CSV / Calendar")
@@ -854,12 +922,15 @@ def main():
             last = st.session_state.app_state['analysis_result']
             st.write(last.get('match_score', 'N/A'))
 
+    # --- Session: read current mode from session_state ---
+    mode = st.session_state["mode"]
+
     # If user chose History, skip normal router
     if mode == "History":
         draw_history_view()
         return
 
-    # Normal flow: start/map/results
+    # Normal flow when in "Analyze" mode: start/map/results
     view = st.session_state.app_state['current_view']
 
     if view == 'start':
