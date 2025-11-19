@@ -52,7 +52,7 @@ if 'app_state' not in st.session_state:
 if 'history' not in st.session_state:
     st.session_state.history = []
 
-# --- 4. The AI Prompt ---
+# --- 4. The AI Prompt (short Prep & Gap rules) ---
 EXTRACTION_PROMPT = """
 You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts: 
 1) Job Details (JD, email, call notes) and 
@@ -70,6 +70,11 @@ Do not add any explanatory text, markdown formatting, or code fences.
 - "interview_scheduled_date" MUST be in the format "YYYY-MM-DD" only (e.g., "2025-01-30").
 - "next_follow_up_date" SHOULD also be in the format "YYYY-MM-DD" where possible.
 - "match_score" should be a numeric percentage from 0 to 100 (integer or string is fine).
+
+**FIELD-SPECIFIC RULES:**
+- "skill_gap_analysis": Write a VERY SHORT summary of the key gaps, in 2–3 sentences maximum (roughly 2–3 lines, no long paragraphs).
+- "prep_hint": Give 1–2 short sentences of concrete interview preparation advice (max 2–3 lines).
+- Do NOT write long paragraphs for these fields. Keep them concise and to the point.
 
 **JSON Keys to use (all keys must be present in the JSON, even if value is "Not specified"):**
 - "date_contacted"
@@ -109,15 +114,30 @@ def safe_json_from_response(text: str) -> dict:
     Extract the first JSON object from the model's text response
     and parse it safely.
     """
-    # Remove common code fences if present
     cleaned = text.strip().replace('```json', '').replace('```', '')
-    # Try to find the first {...} block
     match = re.search(r'\{.*\}', cleaned, re.DOTALL)
     if not match:
-        # If no braces found, just try to parse the whole thing
         return json.loads(cleaned)
     json_str = match.group(0)
     return json.loads(json_str)
+
+def keep_first_sentences(text: str, max_sentences: int = 3) -> str:
+    """
+    Keep only the first `max_sentences` sentences from a text.
+    This helps ensure fields like skill_gap_analysis and prep_hint
+    stay short (2–3 lines).
+    """
+    if not isinstance(text, str):
+        return text
+
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = [s for s in sentences if s]
+
+    if not sentences:
+        return text
+
+    trimmed = " ".join(sentences[:max_sentences])
+    return trimmed
 
 def process_recruiter_text(text_to_process: str) -> dict:
     model = get_model()
@@ -126,6 +146,12 @@ def process_recruiter_text(text_to_process: str) -> dict:
         response = model.generate_content(prompt_with_input)
         raw_text = response.text or ""
         parsed = safe_json_from_response(raw_text)
+
+        # Enforce brevity for Prep & Gap fields (2–3 sentences max)
+        for key in ("skill_gap_analysis", "prep_hint"):
+            if key in parsed and isinstance(parsed[key], str):
+                parsed[key] = keep_first_sentences(parsed[key], max_sentences=3)
+
         return parsed
     except json.JSONDecodeError:
         return {
@@ -184,7 +210,6 @@ def load_css():
     """Loads all custom CSS for the mind map UI."""
     st.markdown("""
     <style>
-        /* --- Base & Fonts --- */
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
@@ -192,18 +217,15 @@ def load_css():
             font-family: 'Manrope', sans-serif;
         }
 
-        /* --- Main Layout & Background --- */
         .stApp {
             background-color: #101c22;
             color: #fff;
         }
 
-        /* --- Remove Streamlit's default padding --- */
         .block-container {
             padding: 2rem 2rem 2rem 2rem !important;
         }
 
-        /* --- Custom Card Styling for Mind Map Nodes --- */
         .mind-map-card {
             background-color: #192b33;
             border: 1px solid #325567;
@@ -234,7 +256,6 @@ def load_css():
             color: #13a4ec;
         }
 
-        /* --- Text Area Styling --- */
         .stTextArea textarea {
             background-color: #101c22;
             border: 1px solid #325567;
@@ -242,7 +263,6 @@ def load_css():
             border-radius: 0.5rem;
         }
 
-        /* --- Button Styling --- */
         .stButton button {
             background-color: #13a4ec;
             color: white;
@@ -261,7 +281,6 @@ def load_css():
             cursor: not-allowed;
         }
 
-        /* --- Header Styling --- */
         .main-header {
             text-align: center;
             padding: 2rem 0;
@@ -281,7 +300,6 @@ def load_css():
             color: #92b7c9;
         }
 
-        /* --- Results Styling --- */
         .results-card {
             background-color: #111c22;
             border-radius: 0.75rem;
@@ -416,11 +434,11 @@ def draw_map_view():
             result = process_recruiter_text(combined_text)
             st.session_state.app_state['analysis_result'] = result
             if "error" not in result:
-                # Keep a simple history for this session
                 st.session_state.history.append(result)
             st.session_state.app_state['current_view'] = 'results'
             st.rerun()
- def draw_results_view():
+
+def draw_results_view():
     """Renders the final analysis results."""
     st.markdown(
         '<div class="main-header">'
@@ -446,7 +464,6 @@ def draw_map_view():
             st.rerun()
         return
 
-    # Try to cast match_score to int if possible
     raw_score = result.get('match_score', 'N/A')
     try:
         match_score_value = int(str(raw_score).replace('%', '').strip())
@@ -475,7 +492,7 @@ def draw_map_view():
                 st.markdown(f"- **Job Type:** {result.get('job_type', 'Not specified')}")
                 st.markdown(f"- **Mode of Contact:** {result.get('mode_of_contact', 'Not specified')}")
 
-    # --- SECOND ROW: Prep & Gap (FULL WIDTH, below summary & score) ---
+    # --- SECOND ROW: Prep & Gap (FULL WIDTH, under summary) ---
     with st.container(border=True):
         st.subheader("🎯 Prep & Gap")
         st.markdown(f"**Skill Gap (2–3 lines):** {result.get('skill_gap_analysis', 'Not identified.')}")
@@ -497,7 +514,6 @@ def draw_map_view():
         with st.container(border=True):
             st.subheader("💾 Downloads")
 
-            # CSV Download
             output = io.StringIO()
             writer = csv.DictWriter(output, fieldnames=result.keys())
             writer.writeheader()
@@ -511,7 +527,6 @@ def draw_map_view():
                 use_container_width=True
             )
 
-            # Calendar Download
             ics_data = create_ics_file(result)
             if ics_data:
                 st.download_button(
@@ -549,7 +564,6 @@ def draw_map_view():
 def main():
     load_css()
 
-    # Sidebar
     with st.sidebar:
         st.markdown("### 🤖 Job Agent")
         st.markdown(
@@ -573,7 +587,6 @@ def main():
     elif view == 'results':
         draw_results_view()
     else:
-        # Fallback in case of any weird state
         reset_app_state()
         draw_start_view()
 
