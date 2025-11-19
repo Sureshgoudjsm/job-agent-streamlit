@@ -12,7 +12,7 @@ import streamlit as st
 # --- 1. Page Configuration (MUST be the first Streamlit command) ---
 st.set_page_config(
     layout="wide",
-    page_title="Job Agent",
+    page_title="Job Agent Sheshu try this app",
     page_icon="🤖"
 )
 
