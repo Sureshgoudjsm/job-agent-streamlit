@@ -350,6 +350,22 @@ def create_ics_file(details: dict) -> str:
     except (ValueError, TypeError):
         return ""
 
+# --- 5b. DataFrame sanitization helper ---
+
+def sanitize_df_for_streamlit(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert any list/dict/set/tuple values in a DataFrame to JSON strings
+    so that pyarrow/Streamlit can render it safely.
+    """
+    df = df.copy()
+    for col in df.columns:
+        if df[col].map(lambda x: isinstance(x, (dict, list, set, tuple))).any():
+            df[col] = df[col].map(
+                lambda x: json.dumps(x, ensure_ascii=False)
+                if isinstance(x, (dict, list, set, tuple)) else x
+            )
+    return df
+
 # --- 6. UI Styling ---
 
 def load_css():
@@ -656,6 +672,7 @@ def draw_results_view():
             st.subheader("📋 Full Extracted Data")
             df_display = pd.DataFrame([result]).T
             df_display.columns = ["Extracted Value"]
+            df_display = sanitize_df_for_streamlit(df_display)
             st.dataframe(df_display, use_container_width=True)
 
     with col2:
@@ -692,9 +709,11 @@ def draw_results_view():
 
     st.markdown("---")
 
+    # Session history table (this session only)
     if st.session_state.history:
         with st.expander("🧾 View this session's history"):
             hist_df = pd.DataFrame(st.session_state.history)
+            hist_df = sanitize_df_for_streamlit(hist_df)
             st.dataframe(hist_df, use_container_width=True)
 
     col_back, col_new = st.columns(2)
@@ -807,6 +826,7 @@ def draw_history_view():
         mask &= (df["timestamp_utc"].dt.date >= start) & (df["timestamp_utc"].dt.date <= end)
 
     df_filtered = df[mask].copy()
+    df_filtered = sanitize_df_for_streamlit(df_filtered)
 
     st.markdown(f"Showing **{len(df_filtered)}** records after filters.")
     st.markdown("---")
