@@ -322,7 +322,7 @@ def draw_start_view():
 
     _, center_col, _ = st.columns([1, 1, 1])
     with center_col:
-        if st.button("🚀 Start Mapping"):
+        if st.button("🚀 Sheshadri"):
             st.session_state.app_state['current_view'] = 'map'
             st.rerun()
 
