@@ -1,4 +1,4 @@
-# streamlit_app_jd_whisperer.py
+# streamlit_app_jd_whisperer_drive_logo.py
 import os
 import json
 import csv
@@ -24,14 +24,19 @@ except ImportError:
 st.set_page_config(
     page_title="JD Whisperer",
     layout="wide",
-    page_icon="🤫"  # small emoji fallback; logo appears in UI
+    page_icon="🤫"
 )
 
 # ------------------------------
-#  LOGO PATH (uploaded asset)
-#  NOTE: this path was provided by the uploader and will be handled
+#  LOGO SOURCE: Google Drive direct URL (Option A)
+#  Replace the ID if you ever change files.
 # ------------------------------
-LOGO_PATH = 'https://drive.google.com/file/d/1DJoP8qI8X5mgFnuB3eQueC_WbX7_AT5n/view?usp=sharing'
+DRIVE_FILE_ID = "1DJoP8qI8X5mgFnuB3eQueC_WbX7_AT5n"
+# Direct view URL for Google Drive files
+LOGO_URL = f"https://drive.google.com/uc?export=view&id={DRIVE_FILE_ID}"
+
+# Optional local fallback path (if you upload later)
+LOCAL_LOGO_PATH = "/mnt/data/your_uploaded_logo.png"
 
 # ------------------------------
 #  ENV + AI CONFIG
@@ -158,20 +163,36 @@ if 'mode' not in st.session_state:
 #  EXTRACTION PROMPT
 # ------------------------------
 EXTRACTION_PROMPT = """
-You are an expert data extraction assistant for job seekers...
-(remainder same as previous prompts; keep brevity rules for 'skill_gap_analysis' and 'prep_hint')
+You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts:
+1) Job Details (JD, email, call notes) and
+2) Applicant Skills (Resume/Summary).
+
+You MUST:
+- Infer as many fields as possible from context.
+- Use "Not specified" if you truly cannot infer a value.
+
+CRITICAL: Return a single, valid JSON object only.
+
+FIELD-SPECIFIC RULES:
+- "interview_scheduled_date" as "YYYY-MM-DD"
+- "skill_gap_analysis": VERY SHORT (2-3 sentences max)
+- "prep_hint": 1-2 short sentences
+
+JSON Keys (all must be present):
+""" + ", ".join(FIELD_ORDER + ["match_score","skill_gap_analysis","prep_hint"]) + """
+
 Input:
+***
 {text_input}
-Return: single valid JSON object with keys:
-{expected_keys}
-""".format(text_input="{text_input}", expected_keys=", ".join(FIELD_ORDER + ["match_score","skill_gap_analysis","prep_hint"]))
+***
+Return ONLY the JSON object.
+"""
 
 # ------------------------------
 #  HELPERS
 # ------------------------------
 def safe_json_from_response(text: str) -> dict:
     cleaned = text.strip().replace('```json', '').replace('```', '')
-    # Extract first {...}
     match = re.search(r'\{.*\}', cleaned, re.DOTALL)
     if not match:
         return json.loads(cleaned)
@@ -243,9 +264,9 @@ def load_brand_css():
         --surface: #122642;
         --muted: #9EACBE;
         --text: #F5F9FF;
-        --accent-1: #4C8CFF; /* Whisper Blue */
-        --accent-2: #6A5CFF; /* Electric Indigo */
-        --accent-3: #00D4D0; /* Teal Whisper */
+        --accent-1: #4C8CFF;
+        --accent-2: #6A5CFF;
+        --accent-3: #00D4D0;
     }}
     body {{
         font-family: 'Inter', 'Manrope', sans-serif;
@@ -283,7 +304,6 @@ def load_brand_css():
         color: var(--muted);
         font-size: 14px;
     }}
-    /* Card look */
     .mind-map-card {{
         background: linear-gradient(180deg, rgba(22,38,60,0.6), rgba(17,30,45,0.45));
         border: 1px solid rgba(76,140,255,0.12);
@@ -291,7 +311,6 @@ def load_brand_css():
         padding: 18px;
         text-align:center;
     }}
-    /* Buttons */
     .stButton > button {{
         background: linear-gradient(90deg, var(--accent-1), var(--accent-2)) !important;
         color: white !important;
@@ -303,22 +322,18 @@ def load_brand_css():
     .stButton > button:hover {{
         filter: brightness(1.03);
     }}
-    /* Metric style */
     .stMetric > div > div > div {{
         color: var(--accent-3) !important;
     }}
-    /* Results card */
     .results-card {{
         background: linear-gradient(180deg, rgba(8,20,36,0.45), rgba(16,28,42,0.6));
         border-radius: 12px;
         padding: 16px;
         border: 1px solid rgba(106,92,255,0.12);
     }}
-    /* Sidebar smaller text */
     .sidebar .stMarkdown p, .sidebar .stMarkdown li {{
         color: var(--muted) !important;
     }}
-    /* Whisper gradient divider */
     .whisper-divider {{
         height:6px;
         border-radius:6px;
@@ -331,14 +346,29 @@ def load_brand_css():
 # ------------------------------
 #  UI: Start / Map / Results / History
 # ------------------------------
+def try_show_logo(width=72):
+    """
+    Try to display the logo from Drive URL. Fallback to local path if Drive load fails.
+    (st.image will usually handle remote URLs; fallback is just a try/except)
+    """
+    try:
+        st.image(LOGO_URL, width=width)
+    except Exception:
+        # fallback if local file was uploaded
+        if os.path.exists(LOCAL_LOGO_PATH):
+            st.image(LOCAL_LOGO_PATH, width=width)
+
 def draw_start_view():
     st.markdown('<div class="main-header">', unsafe_allow_html=True)
-    # show logo if exists
     try:
-        st.image(LOGO_PATH, width=72, use_column_width=False, caption=None)
+        # show logo from Drive URL
+        st.image(LOGO_URL, width=72, use_column_width=False)
     except Exception:
-        pass
+        # fallback to local if available
+        if os.path.exists(LOCAL_LOGO_PATH):
+            st.image(LOCAL_LOGO_PATH, width=72)
     st.markdown('</div>', unsafe_allow_html=True)
+
     st.markdown('<div style="display:flex;flex-direction:column;gap:6px">', unsafe_allow_html=True)
     st.markdown('<h1>JD Whisperer</h1>', unsafe_allow_html=True)
     st.markdown('<p>Decode job descriptions into clear candidate insights — skills, gaps, match score & follow-ups.</p>', unsafe_allow_html=True)
@@ -398,13 +428,13 @@ def draw_map_view():
 
 def draw_results_view():
     st.markdown('<div style="display:flex;justify-content:space-between;align-items:center">', unsafe_allow_html=True)
-    # Show brand logo left + title right
     left, right = st.columns([1,4])
     with left:
         try:
-            st.image(LOGO_PATH, width=64)
+            st.image(LOGO_URL, width=64)
         except Exception:
-            pass
+            if os.path.exists(LOCAL_LOGO_PATH):
+                st.image(LOCAL_LOGO_PATH, width=64)
     with right:
         st.markdown('<h2 style="margin:0">Job Match & Tracker Analysis</h2>', unsafe_allow_html=True)
         st.markdown('<p style="margin:0;color:var(--muted)">An at-a-glance analysis of your profile against the recruiter/job details.</p>', unsafe_allow_html=True)
@@ -445,7 +475,6 @@ def draw_results_view():
 
     st.markdown('<div class="whisper-divider"></div>', unsafe_allow_html=True)
 
-    # Prep & Gap full width
     st.subheader("🎯 Prep & Gap")
     st.markdown(f"**Skill Gap (short):** {result.get('skill_gap_analysis','Not identified.')}")
     st.markdown(f"**Prep Hint:** {result.get('prep_hint','No hint available.')}")
@@ -493,9 +522,10 @@ def draw_results_view():
 def draw_history_view():
     st.markdown('<div style="display:flex;align-items:center;gap:1rem">', unsafe_allow_html=True)
     try:
-        st.image(LOGO_PATH, width=56)
+        st.image(LOGO_URL, width=56)
     except Exception:
-        pass
+        if os.path.exists(LOCAL_LOGO_PATH):
+            st.image(LOCAL_LOGO_PATH, width=56)
     st.markdown('<h2 style="margin:0">📊 History Dashboard</h2>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -566,9 +596,10 @@ def main():
     with st.sidebar:
         st.markdown("<div style='display:flex;align-items:center;gap:8px'>", unsafe_allow_html=True)
         try:
-            st.image(LOGO_PATH, width=48)
+            st.image(LOGO_URL, width=48)
         except Exception:
-            pass
+            if os.path.exists(LOCAL_LOGO_PATH):
+                st.image(LOCAL_LOGO_PATH, width=48)
         st.markdown("<div><strong>JD Whisperer</strong><br><small style='color:var(--muted)'>Decode any job description</small></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
