@@ -70,7 +70,7 @@ genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def get_model():
-    return genai.GenerativeModel('gemini-3-pro-preview')
+    return genai.GenerativeModel('gemini-2.5-flash')
 
 # ------------------------------
 #  GOOGLE SHEETS (optional persistence)
