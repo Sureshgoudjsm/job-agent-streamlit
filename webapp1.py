@@ -31,7 +31,7 @@ st.set_page_config(
 #  LOGO PATH (uploaded asset)
 #  NOTE: this path was provided by the uploader and will be handled
 # ------------------------------
-LOGO_PATH = '/mnt/data/A_logo_in_digital_vector_art_format_for_"JD_Whispe.png'
+LOGO_PATH = 'https://drive.google.com/file/d/1DJoP8qI8X5mgFnuB3eQueC_WbX7_AT5n/view?usp=sharing'
 
 # ------------------------------
 #  ENV + AI CONFIG
