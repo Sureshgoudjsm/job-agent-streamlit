@@ -1,9 +1,10 @@
-# streamlit_app_jd_whisperer_drive_logo.py
+# streamlit_app_jd_whisperer_patched_logo.py
 import os
 import json
 import csv
 import io
 import re
+import shutil
 import pandas as pd
 import datetime
 from dotenv import load_dotenv
@@ -28,15 +29,33 @@ st.set_page_config(
 )
 
 # ------------------------------
-#  LOGO SOURCE: Google Drive direct URL (Option A)
-#  Replace the ID if you ever change files.
+#  LOGO: prefer local clean filename (rename uploaded file if needed)
+#  The original uploaded file (messy name) was:
+#  /mnt/data/A_logo_in_digital_vector_art_format_for_"JD_Whispe.png
+#  We'll attempt to rename/copy it to a clean path: /mnt/data/jd_whisperer_logo.png
+# ------------------------------
+ORIG_UPLOADED_PATH = '/mnt/data/A_logo_in_digital_vector_art_format_for_"JD_Whispe.png'
+CLEAN_LOCAL_LOGO = '/mnt/data/jd_whisperer_logo.png'
+
+# If original exists and clean file doesn't, try to rename (or copy)
+if os.path.exists(ORIG_UPLOADED_PATH) and not os.path.exists(CLEAN_LOCAL_LOGO):
+    try:
+        os.rename(ORIG_UPLOADED_PATH, CLEAN_LOCAL_LOGO)
+    except Exception:
+        try:
+            shutil.copy(ORIG_UPLOADED_PATH, CLEAN_LOCAL_LOGO)
+        except Exception:
+            # ignore failures; we'll fallback to Drive URL below if needed
+            pass
+
+LOCAL_LOGO_PATH = CLEAN_LOCAL_LOGO
+
+# ------------------------------
+#  (Optional) Google Drive fallback URL — only used if local file isn't present
+#  Note: you selected Option A earlier; kept as fallback in case local file missing
 # ------------------------------
 DRIVE_FILE_ID = "1DJoP8qI8X5mgFnuB3eQueC_WbX7_AT5n"
-# Direct view URL for Google Drive files
 LOGO_URL = f"https://drive.google.com/uc?export=view&id={DRIVE_FILE_ID}"
-
-# Optional local fallback path (if you upload later)
-LOCAL_LOGO_PATH = "/mnt/data/your_uploaded_logo.png"
 
 # ------------------------------
 #  ENV + AI CONFIG
@@ -348,25 +367,24 @@ def load_brand_css():
 # ------------------------------
 def try_show_logo(width=72):
     """
-    Try to display the logo from Drive URL. Fallback to local path if Drive load fails.
-    (st.image will usually handle remote URLs; fallback is just a try/except)
+    Try to display the logo from local clean path first, then fallback to Drive URL.
     """
+    if os.path.exists(LOCAL_LOGO_PATH):
+        try:
+            st.image(LOCAL_LOGO_PATH, width=width)
+            return
+        except Exception:
+            pass
+    # fallback to Drive URL (if local missing or failed)
     try:
         st.image(LOGO_URL, width=width)
     except Exception:
-        # fallback if local file was uploaded
-        if os.path.exists(LOCAL_LOGO_PATH):
-            st.image(LOCAL_LOGO_PATH, width=width)
+        # final fallback: nothing
+        pass
 
 def draw_start_view():
     st.markdown('<div class="main-header">', unsafe_allow_html=True)
-    try:
-        # show logo from Drive URL
-        st.image(LOGO_URL, width=72, use_column_width=False)
-    except Exception:
-        # fallback to local if available
-        if os.path.exists(LOCAL_LOGO_PATH):
-            st.image(LOCAL_LOGO_PATH, width=72)
+    try_show_logo(width=72)
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div style="display:flex;flex-direction:column;gap:6px">', unsafe_allow_html=True)
@@ -430,11 +448,7 @@ def draw_results_view():
     st.markdown('<div style="display:flex;justify-content:space-between;align-items:center">', unsafe_allow_html=True)
     left, right = st.columns([1,4])
     with left:
-        try:
-            st.image(LOGO_URL, width=64)
-        except Exception:
-            if os.path.exists(LOCAL_LOGO_PATH):
-                st.image(LOCAL_LOGO_PATH, width=64)
+        try_show_logo(width=64)
     with right:
         st.markdown('<h2 style="margin:0">Job Match & Tracker Analysis</h2>', unsafe_allow_html=True)
         st.markdown('<p style="margin:0;color:var(--muted)">An at-a-glance analysis of your profile against the recruiter/job details.</p>', unsafe_allow_html=True)
@@ -521,11 +535,7 @@ def draw_results_view():
 
 def draw_history_view():
     st.markdown('<div style="display:flex;align-items:center;gap:1rem">', unsafe_allow_html=True)
-    try:
-        st.image(LOGO_URL, width=56)
-    except Exception:
-        if os.path.exists(LOCAL_LOGO_PATH):
-            st.image(LOCAL_LOGO_PATH, width=56)
+    try_show_logo(width=56)
     st.markdown('<h2 style="margin:0">📊 History Dashboard</h2>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -595,11 +605,7 @@ def main():
     # Sidebar with brand logo + mode buttons (stored in session_state['mode'])
     with st.sidebar:
         st.markdown("<div style='display:flex;align-items:center;gap:8px'>", unsafe_allow_html=True)
-        try:
-            st.image(LOGO_URL, width=48)
-        except Exception:
-            if os.path.exists(LOCAL_LOGO_PATH):
-                st.image(LOCAL_LOGO_PATH, width=48)
+        try_show_logo(width=48)
         st.markdown("<div><strong>JD Whisperer</strong><br><small style='color:var(--muted)'>Decode any job description</small></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
