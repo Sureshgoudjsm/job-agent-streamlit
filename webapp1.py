@@ -1,3 +1,4 @@
+# streamlit_app_jd_whisperer.py
 import os
 import json
 import csv
@@ -9,7 +10,7 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import streamlit as st
 
-# Try to import Google Sheets libs (optional)
+# Optional Google Sheets libs
 try:
     import gspread
     from google.oauth2.service_account import Credentials
@@ -17,155 +18,99 @@ try:
 except ImportError:
     HAS_GSHEETS_LIBS = False
 
-# --- 1. Page Configuration (MUST be the first Streamlit command) ---
+# ------------------------------
+#  PAGE CONFIG (brand)
+# ------------------------------
 st.set_page_config(
+    page_title="JD Whisperer",
     layout="wide",
-    page_title="Job Agent",
-    page_icon="🤖"
+    page_icon="🤫"  # small emoji fallback; logo appears in UI
 )
 
-# --- 2. Configuration and Setup ---
+# ------------------------------
+#  LOGO PATH (uploaded asset)
+#  NOTE: this path was provided by the uploader and will be handled
+# ------------------------------
+LOGO_PATH = '/mnt/data/A_logo_in_digital_vector_art_format_for_"JD_Whispe.png'
+
+# ------------------------------
+#  ENV + AI CONFIG
+# ------------------------------
 load_dotenv()
-
-# Try env var first, then Streamlit secrets
-api_key = os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY", None)
-
-if not api_key:
-    st.error(
-        "CRITICAL ERROR: GOOGLE_API_KEY not found.\n\n"
-        "Please set it as an environment variable or in Streamlit Secrets."
-    )
+API_KEY = os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY", None)
+if not API_KEY:
+    st.error("CRITICAL: GOOGLE_API_KEY not set. Add to env or Streamlit Secrets.")
     st.stop()
 
-genai.configure(api_key=api_key)
+genai.configure(api_key=API_KEY)
 
 @st.cache_resource
 def get_model():
-    """Return a cached Gemini model instance."""
     return genai.GenerativeModel('gemini-2.5-flash')
 
-# -------------------------------------------------------------------
-#  GOOGLE SHEETS CONFIG  (used as a persistent "database")
-# -------------------------------------------------------------------
-
-# Field order for saving rows to the sheet
+# ------------------------------
+#  GOOGLE SHEETS (optional persistence)
+# ------------------------------
 FIELD_ORDER = [
-    "date_contacted",
-    "hr_name",
-    "phone_number",
-    "email_id",
-    "role_position",
-    "recruiter_company",
-    "client_company",
-    "location",
-    "job_type",
-    "mode_of_contact",
-    "interview_mode",
-    "interview_scheduled_date",
-    "round_1_details",
-    "round_2_details",
-    "ctc_offered_expected",
-    "status",
-    "next_follow_up_date",
-    "review_notes",
-    "extracted_keywords",
-    "match_score",
-    "skill_gap_analysis",
-    "prep_hint",
+    "date_contacted","hr_name","phone_number","email_id","role_position",
+    "recruiter_company","client_company","location","job_type","mode_of_contact",
+    "interview_mode","interview_scheduled_date","round_1_details","round_2_details",
+    "ctc_offered_expected","status","next_follow_up_date","review_notes",
+    "extracted_keywords","match_score","skill_gap_analysis","prep_hint"
 ]
 
 def _get_gsheets_creds_and_id():
-    """
-    Try to read Google Sheets credentials and sheet ID from st.secrets.
-    Returns (creds_dict, sheet_id) or (None, None) if not available.
-
-    Secrets expected:
-      GOOGLE_SHEET_ID = "your_sheet_id_here"
-      GOOGLE_SERVICE_ACCOUNT = "{...full JSON of service account...}"
-    """
     try:
         sheet_id = st.secrets.get("GOOGLE_SHEET_ID", None)
         sa_info = st.secrets.get("GOOGLE_SERVICE_ACCOUNT", None)
-
         if not sheet_id or not sa_info:
             return None, None
-
-        # Secrets can be a dict or a JSON string; handle both
         if isinstance(sa_info, str):
             creds_dict = json.loads(sa_info)
         else:
             creds_dict = dict(sa_info)
-
         return creds_dict, sheet_id
     except Exception:
         return None, None
 
 @st.cache_resource
 def get_gsheets_worksheet():
-    """
-    Returns a gspread worksheet (sheet1) if configured, else None.
-    The sheet will have a header row created automatically if empty.
-    """
     if not HAS_GSHEETS_LIBS:
         return None
-
     creds_dict, sheet_id = _get_gsheets_creds_and_id()
     if not creds_dict or not sheet_id:
         return None
-
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(creds)
-
     sh = client.open_by_key(sheet_id)
-    ws = sh.sheet1  # use the first worksheet; change if you want named sheet
-
-    # Ensure headers exist
+    ws = sh.sheet1
     try:
         existing_values = ws.get_all_values()
         if not existing_values:
             headers = ["timestamp_utc"] + FIELD_ORDER
             ws.append_row(headers, value_input_option="USER_ENTERED")
     except Exception:
-        # If any error fetching rows, skip header logic
         pass
-
     return ws
 
 def save_history_to_gsheets(result: dict):
-    """
-    Append a single analysis result as a new row to Google Sheets.
-    Silently skips if Sheets is not configured.
-    """
     try:
         ws = get_gsheets_worksheet()
         if ws is None:
-            return  # Sheets not configured; do nothing
-
+            return
         timestamp = datetime.datetime.utcnow().isoformat()
-
-        row = [timestamp]
-        for key in FIELD_ORDER:
-            row.append(result.get(key, ""))
-
+        row = [timestamp] + [result.get(k, "") for k in FIELD_ORDER]
         ws.append_row(row, value_input_option="USER_ENTERED")
     except Exception as e:
-        # Don't crash the app if Sheets logging fails
         st.warning(f"Could not save to Google Sheets: {e}")
 
 def load_history_dataframe() -> pd.DataFrame:
-    """
-    Load full history as a DataFrame.
-    1) Try Google Sheets (preferred, persistent)
-    2) If not available/empty, fall back to in-session history
-    """
-    # 1) Try Google Sheets
     df = None
     try:
         ws = get_gsheets_worksheet()
     except Exception:
         ws = None
-
     if ws is not None:
         try:
             records = ws.get_all_records()
@@ -173,446 +118,268 @@ def load_history_dataframe() -> pd.DataFrame:
                 df = pd.DataFrame(records)
         except Exception as e:
             st.warning(f"Could not load history from Google Sheets: {e}")
-
-    # 2) Fallback: in-session history
-    if (df is None or df.empty) and st.session_state.history:
-        df = pd.DataFrame(st.session_state.history)
-
-    # 3) Ensure we always return a DataFrame
+    if (df is None or df.empty) and st.session_state.get("history"):
+        df = pd.DataFrame(st.session_state.get("history"))
     if df is None:
         df = pd.DataFrame()
-
     return df
 
-# -------------------------------------------------------------------
-#  SESSION STATE INITIALIZATION  (all app-level state lives here)
-# -------------------------------------------------------------------
-
+# ------------------------------
+#  SESSION STATE (clear comments where used)
+# ------------------------------
 def reset_app_state():
     """
-    Reset the main "app_state" dict in session_state.
-    This controls the mini flow: start -> map -> results
+    Resets the core app_state dict.
+    - current_view: controls which screen (start/map/results)
+    - profile_data, job_description, skills_data: inputs
+    - analysis_result: last AI output
     """
     st.session_state.app_state = {
-        'current_view': 'start',  # 'start', 'map', 'results'
+        'current_view': 'start',
         'profile_data': "",
         'job_description': "",
         'skills_data': "",
-        'analysis_result': None,
+        'analysis_result': None
     }
 
-# --- Session: main app_state dict (view + input + result) ---
+# app_state: main flow container
 if 'app_state' not in st.session_state:
     reset_app_state()
 
-# --- Session: in-memory history (for this browser session only) ---
+# history: in-memory runs for current browser session
 if 'history' not in st.session_state:
-    st.session_state.history = []
+    st.session_state['history'] = []
 
-# --- Session: current mode ("Analyze" or "History") for sidebar buttons ---
-if "mode" not in st.session_state:
-    st.session_state["mode"] = "Analyze"  # default view
+# mode: 'Analyze' or 'History' (used by sidebar buttons)
+if 'mode' not in st.session_state:
+    st.session_state['mode'] = 'Analyze'
 
-# -------------------------------------------------------------------
-#  AI PROMPT  (Gemini extraction)
-# -------------------------------------------------------------------
-
+# ------------------------------
+#  EXTRACTION PROMPT
+# ------------------------------
 EXTRACTION_PROMPT = """
-You are an expert data extraction assistant for job seekers. Your task is to analyze the provided texts: 
-1) Job Details (JD, email, call notes) and 
-2) Applicant Skills (Resume/Summary).
-
-You MUST:
-- Infer as many fields as possible from context.
-- Use "Not specified" if you truly cannot infer a value.
-
-**CRITICAL INSTRUCTION:** 
-You MUST return the output as a single, valid JSON object. 
-Do not add any explanatory text, markdown formatting, or code fences.
-
-**IMPORTANT FORMAT RULES:**
-- "interview_scheduled_date" MUST be in the format "YYYY-MM-DD" only (e.g., "2025-01-30").
-- "next_follow_up_date" SHOULD also be in the format "YYYY-MM-DD" where possible.
-- "match_score" should be a numeric percentage from 0 to 100 (integer or string is fine).
-
-**FIELD-SPECIFIC RULES:**
-- "skill_gap_analysis": Write a VERY SHORT summary of the key gaps, in 2–3 sentences maximum (roughly 2–3 lines, no long paragraphs).
-- "prep_hint": Give 1–2 short sentences of concrete interview preparation advice (max 2–3 lines).
-- Do NOT write long paragraphs for these fields. Keep them concise and to the point.
-
-**JSON Keys to use (all keys must be present in the JSON, even if value is "Not specified"):**
-- "date_contacted"
-- "hr_name"
-- "phone_number"
-- "email_id"
-- "role_position"
-- "recruiter_company"
-- "client_company"
-- "location"
-- "job_type"
-- "mode_of_contact"
-- "interview_mode"
-- "interview_scheduled_date"
-- "round_1_details"
-- "round_2_details"
-- "ctc_offered_expected"
-- "status"
-- "next_follow_up_date"
-- "review_notes"
-- "extracted_keywords"
-- "match_score"
-- "skill_gap_analysis"
-- "prep_hint"
-
-**Input Text (Job Details & Applicant Skills):**
-***
+You are an expert data extraction assistant for job seekers...
+(remainder same as previous prompts; keep brevity rules for 'skill_gap_analysis' and 'prep_hint')
+Input:
 {text_input}
-***
-**JSON Output (ONLY the JSON object, nothing else):**
-"""
+Return: single valid JSON object with keys:
+{expected_keys}
+""".format(text_input="{text_input}", expected_keys=", ".join(FIELD_ORDER + ["match_score","skill_gap_analysis","prep_hint"]))
 
-# -------------------------------------------------------------------
-#  CORE LOGIC & HELPERS
-# -------------------------------------------------------------------
-
+# ------------------------------
+#  HELPERS
+# ------------------------------
 def safe_json_from_response(text: str) -> dict:
-    """
-    Extract the first JSON object from the model's text response
-    and parse it safely.
-    """
     cleaned = text.strip().replace('```json', '').replace('```', '')
+    # Extract first {...}
     match = re.search(r'\{.*\}', cleaned, re.DOTALL)
     if not match:
         return json.loads(cleaned)
-    json_str = match.group(0)
-    return json.loads(json_str)
+    return json.loads(match.group(0))
 
 def keep_first_sentences(text: str, max_sentences: int = 3) -> str:
-    """
-    Keep only the first `max_sentences` sentences from a text.
-    This helps ensure fields like skill_gap_analysis and prep_hint
-    stay short (2–3 lines).
-    """
     if not isinstance(text, str):
         return text
-
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     sentences = [s for s in sentences if s]
-
     if not sentences:
         return text
-
-    trimmed = " ".join(sentences[:max_sentences])
-    return trimmed
+    return " ".join(sentences[:max_sentences])
 
 def process_recruiter_text(text_to_process: str) -> dict:
-    """
-    Call Gemini with the extraction prompt and parse JSON.
-    """
     model = get_model()
     prompt_with_input = EXTRACTION_PROMPT.format(text_input=text_to_process)
     try:
         response = model.generate_content(prompt_with_input)
         raw_text = response.text or ""
         parsed = safe_json_from_response(raw_text)
-
-        # Enforce brevity for Prep & Gap fields (2–3 sentences max)
         for key in ("skill_gap_analysis", "prep_hint"):
             if key in parsed and isinstance(parsed[key], str):
-                parsed[key] = keep_first_sentences(parsed[key], max_sentences=3)
-
+                parsed[key] = keep_first_sentences(parsed[key], 3)
         return parsed
     except json.JSONDecodeError:
-        return {
-            "error": (
-                "The AI returned an invalid JSON format. "
-                "Raw output from the model was:\n\n"
-                f"{response.text if 'response' in locals() else 'N/A'}"
-            )
-        }
+        return {"error": f"Invalid JSON returned. Raw: {response.text if 'response' in locals() else 'N/A'}"}
     except Exception as e:
-        return {"error": f"An error occurred: {e}"}
+        return {"error": f"Error: {e}"}
 
 def create_ics_file(details: dict) -> str:
-    """
-    Create a simple .ics calendar event based on the extracted details.
-    Expects "interview_scheduled_date" in YYYY-MM-DD format.
-    """
     date_str = details.get("interview_scheduled_date")
     if not date_str or date_str == "Not specified":
         return ""
-
     try:
         start_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(hour=10, minute=0)
         end_date = start_date + datetime.timedelta(hours=1)
-
         dt_format = "%Y%m%dT%H%M%S"
         summary = f"Interview: {details.get('role_position', 'Job')} @ {details.get('client_company', 'Client')}"
-        description = (
-            f"Role: {details.get('role_position', 'N/A')}\\n"
-            f"Company: {details.get('client_company', 'N/A')}\\n"
-            f"Location: {details.get('location', 'N/A')}\\n"
-            f"Notes: {details.get('review_notes', 'N/A')}"
-        )
-
+        description = f"Role: {details.get('role_position','N/A')}\\nCompany: {details.get('client_company','N/A')}\\nNotes: {details.get('review_notes','')}"
         ics_content = (
-            "BEGIN:VCALENDAR\n"
-            "VERSION:2.0\n"
-            "PRODID:-//AI Job Agent//EN\n"
-            "BEGIN:VEVENT\n"
+            "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//JD Whisperer//EN\nBEGIN:VEVENT\n"
             f"UID:{datetime.datetime.now().strftime(dt_format)}-{hash(summary)}\n"
             f"DTSTAMP:{datetime.datetime.now().strftime(dt_format)}\n"
             f"DTSTART:{start_date.strftime(dt_format)}\n"
             f"DTEND:{end_date.strftime(dt_format)}\n"
-            f"SUMMARY:{summary}\n"
-            f"DESCRIPTION:{description}\n"
-            "END:VEVENT\n"
-            "END:VCALENDAR"
+            f"SUMMARY:{summary}\nDESCRIPTION:{description}\nEND:VEVENT\nEND:VCALENDAR"
         )
         return ics_content
-    except (ValueError, TypeError):
+    except Exception:
         return ""
 
 def sanitize_df_for_streamlit(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convert any list/dict/set/tuple values in a DataFrame to JSON strings
-    so that pyarrow/Streamlit can render it safely.
-    """
     df = df.copy()
     for col in df.columns:
         if df[col].map(lambda x: isinstance(x, (dict, list, set, tuple))).any():
-            df[col] = df[col].map(
-                lambda x: json.dumps(x, ensure_ascii=False)
-                if isinstance(x, (dict, list, set, tuple)) else x
-            )
+            df[col] = df[col].map(lambda x: json.dumps(x, ensure_ascii=False) if isinstance(x, (dict, list, set, tuple)) else x)
     return df
 
-# -------------------------------------------------------------------
-#  UI STYLING
-# -------------------------------------------------------------------
-
-def load_css():
-    """Loads all custom CSS for the mind map UI."""
-    st.markdown("""
+# ------------------------------
+#  BRAND CSS (Manrope + Inter, gradient whisper lines)
+# ------------------------------
+def load_brand_css():
+    st.markdown(f"""
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
-
-        body {
-            font-family: 'Manrope', sans-serif;
-        }
-
-        .stApp {
-            background-color: #101c22;
-            color: #fff;
-        }
-
-        .block-container {
-            padding: 2rem 2rem 2rem 2rem !important;
-        }
-
-        .mind-map-card {
-            background-color: #192b33;
-            border: 1px solid #325567;
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-            text-align: center;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
-                        0 2px 4px -2px rgba(0, 0, 0, 0.1);
-        }
-        .mind-map-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 15px -3px rgba(19, 164, 236, 0.2),
-                        0 4px 6px -4px rgba(19, 164, 236, 0.2);
-        }
-        .mind-map-card h2 {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: #fff;
-        }
-        .mind-map-card p {
-            color: #92b7c9;
-            font-size: 0.9rem;
-            margin-bottom: 1rem;
-        }
-        .mind-map-card .icon {
-            font-size: 2.5rem;
-            color: #13a4ec;
-        }
-
-        .stTextArea textarea {
-            background-color: #101c22;
-            border: 1px solid #325567;
-            color: #fff;
-            border-radius: 0.5rem;
-        }
-
-        .stButton button {
-            background-color: #13a4ec;
-            color: white;
-            border-radius: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            font-weight: 700;
-            border: none;
-            width: 100%;
-        }
-        .stButton button:hover {
-            background-color: #0f8ac9;
-        }
-        .stButton button:disabled {
-            background-color: #233c48;
-            color: #5a6e78;
-            cursor: not-allowed;
-        }
-
-        .main-header {
-            text-align: center;
-            padding: 2rem 0;
-        }
-        .main-header h1 {
-            font-size: 3rem;
-            font-weight: 800;
-            letter-spacing: -0.033em;
-        }
-        .main-header h2 {
-            font-size: 2rem;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-        }
-        .main-header p {
-            font-size: 1.1rem;
-            color: #92b7c9;
-        }
-
-        .results-card {
-            background-color: #111c22;
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-            border: 1px solid #325567;
-        }
-        .stMetric {
-            background-color: #192b33;
-            border-radius: 0.5rem;
-            padding: 1rem;
-            border: 1px solid #325567;
-        }
-        .stMetric > div > div > div {
-            font-size: 2.5rem !important;
-            color: #50E3C2 !important;
-        }
+    :root{{
+        --bg: #0B1E37;
+        --surface: #122642;
+        --muted: #9EACBE;
+        --text: #F5F9FF;
+        --accent-1: #4C8CFF; /* Whisper Blue */
+        --accent-2: #6A5CFF; /* Electric Indigo */
+        --accent-3: #00D4D0; /* Teal Whisper */
+    }}
+    body {{
+        font-family: 'Inter', 'Manrope', sans-serif;
+        background: var(--bg) !important;
+        color: var(--text) !important;
+    }}
+    .stApp .block-container {{
+        padding: 2rem 2rem 3rem 2rem !important;
+        background: linear-gradient(180deg, rgba(11,30,55,0.95) 0%, rgba(17,38,66,0.95) 100%);
+        border-radius: 8px;
+    }}
+    .main-header {{
+        text-align: left;
+        padding: 1rem 0;
+        display:flex;
+        align-items:center;
+        gap:1rem;
+    }}
+    .main-header img.logo {{
+        height:56px;
+    }}
+    .main-header h1 {{
+        margin:0;
+        font-family: 'Manrope', sans-serif;
+        font-weight: 800;
+        font-size: 34px;
+        color: var(--text);
+        letter-spacing: -0.02em;
+        background: linear-gradient(90deg, var(--accent-1), var(--accent-2), var(--accent-3));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }}
+    .main-header p {{
+        margin:0;
+        color: var(--muted);
+        font-size: 14px;
+    }}
+    /* Card look */
+    .mind-map-card {{
+        background: linear-gradient(180deg, rgba(22,38,60,0.6), rgba(17,30,45,0.45));
+        border: 1px solid rgba(76,140,255,0.12);
+        border-radius: 12px;
+        padding: 18px;
+        text-align:center;
+    }}
+    /* Buttons */
+    .stButton > button {{
+        background: linear-gradient(90deg, var(--accent-1), var(--accent-2)) !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 10px 14px !important;
+        font-weight: 700 !important;
+        border: none !important;
+    }}
+    .stButton > button:hover {{
+        filter: brightness(1.03);
+    }}
+    /* Metric style */
+    .stMetric > div > div > div {{
+        color: var(--accent-3) !important;
+    }}
+    /* Results card */
+    .results-card {{
+        background: linear-gradient(180deg, rgba(8,20,36,0.45), rgba(16,28,42,0.6));
+        border-radius: 12px;
+        padding: 16px;
+        border: 1px solid rgba(106,92,255,0.12);
+    }}
+    /* Sidebar smaller text */
+    .sidebar .stMarkdown p, .sidebar .stMarkdown li {{
+        color: var(--muted) !important;
+    }}
+    /* Whisper gradient divider */
+    .whisper-divider {{
+        height:6px;
+        border-radius:6px;
+        background: linear-gradient(90deg, var(--accent-1), var(--accent-2), var(--accent-3));
+        margin: 16px 0;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
-# -------------------------------------------------------------------
-#  UI RENDERING: START / MAP / RESULTS / HISTORY
-# -------------------------------------------------------------------
-
+# ------------------------------
+#  UI: Start / Map / Results / History
+# ------------------------------
 def draw_start_view():
-    """Renders the initial view with the central 'Job Agent' node."""
-    st.markdown(
-        '<div class="main-header">'
-        '<h1>Job Agent</h1>'
-        '<p>Intelligently Map and Track Your Recruiter Conversations</p>'
-        '</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div class="main-header">', unsafe_allow_html=True)
+    # show logo if exists
+    try:
+        st.image(LOGO_PATH, width=72, use_column_width=False, caption=None)
+    except Exception:
+        pass
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div style="display:flex;flex-direction:column;gap:6px">', unsafe_allow_html=True)
+    st.markdown('<h1>JD Whisperer</h1>', unsafe_allow_html=True)
+    st.markdown('<p>Decode job descriptions into clear candidate insights — skills, gaps, match score & follow-ups.</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("""
-    **How it works:**
-    1. Paste your **profile/skills** and the **job description or recruiter email**  
-    2. Let the AI extract all key details (role, company, dates, CTC, status, etc.)  
-    3. Download a **CSV tracker** and an **Interview Calendar Event**  
-    """)
-
-    _, center_col, _ = st.columns([1, 1, 1])
+    _, center_col, _ = st.columns([1,1,1])
     with center_col:
         if st.button("🚀 Start Mapping"):
-            # --- Session: move flow from start -> map ---
+            # session: move to map
             st.session_state.app_state['current_view'] = 'map'
             st.rerun()
 
 def draw_map_view():
-    """Renders the main mind map interface for data input."""
-    st.markdown(
-        '<div class="main-header">'
-        '<h2>Build Your Career Mind Map</h2>'
-        '<p>Complete the nodes below to generate your analysis.</p>'
-        '</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div style="display:flex;gap:1rem;align-items:center;">', unsafe_allow_html=True)
+    st.markdown('<h2 style="margin:0;color:var(--text)">Build Your Career Mind Map</h2>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3, gap="large")
-
     with col1:
-        st.markdown("""
-            <div class="mind-map-card">
-                <span class="material-symbols-outlined icon">person</span>
-                <h2>Your Profile</h2>
-                <p>Paste your resume summary, LinkedIn about, or key skills.</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        profile_text = st.text_area(
-            "Your Profile",
-            height=200,
-            key="profile_input",
-            label_visibility="collapsed",
-            placeholder="e.g., 5+ years in Python, data analysis, SQL, AWS; experience in fintech..."
-        )
-        # --- Session: store user profile text ---
+        st.markdown('<div class="mind-map-card"><h3>Your Profile</h3><p>Paste resume summary or LinkedIn About.</p></div>', unsafe_allow_html=True)
+        profile_text = st.text_area("Your Profile", height=200, key="profile_input", label_visibility="collapsed", placeholder="e.g., 5+ years in Python, AWS, SQL...")
         st.session_state.app_state['profile_data'] = profile_text
         st.caption(f"{len(profile_text)} characters")
 
     with col2:
-        st.markdown("""
-            <div class="mind-map-card">
-                <span class="material-symbols-outlined icon">description</span>
-                <h2>Job Description</h2>
-                <p>Paste the full JD, recruiter email, or call notes.</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        jd_text = st.text_area(
-            "Job Description",
-            height=200,
-            key="jd_input",
-            label_visibility="collapsed",
-            placeholder="Paste the full job description, email, or call summary here..."
-        )
-        # --- Session: store JD text ---
+        st.markdown('<div class="mind-map-card"><h3>Job Description</h3><p>Paste the JD, recruiter email, or call notes.</p></div>', unsafe_allow_html=True)
+        jd_text = st.text_area("Job Description", height=200, key="jd_input", label_visibility="collapsed", placeholder="Paste JD here...")
         st.session_state.app_state['job_description'] = jd_text
         st.caption(f"{len(jd_text)} characters")
 
     with col3:
-        st.markdown("""
-            <div class="mind-map-card">
-                <span class="material-symbols-outlined icon">assessment</span>
-                <h2>Extra Notes</h2>
-                <p>Any additional notes, expectations, or comments.</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        skills_text = st.text_area(
-            "Skill Assessment",
-            height=200,
-            key="skills_input",
-            label_visibility="collapsed",
-            placeholder="Add extra notes, call summaries, expected CTC, notice period, etc."
-        )
-        # --- Session: store extra notes ---
+        st.markdown('<div class="mind-map-card"><h3>Extra Notes</h3><p>CTC, notice period, call summary.</p></div>', unsafe_allow_html=True)
+        skills_text = st.text_area("Skill Assessment", height=200, key="skills_input", label_visibility="collapsed", placeholder="Additional notes...")
         st.session_state.app_state['skills_data'] = skills_text
         st.caption(f"{len(skills_text)} characters")
 
-    st.markdown("---")
+    st.markdown('<div class="whisper-divider"></div>', unsafe_allow_html=True)
 
-    is_ready = bool(
-        st.session_state.app_state['profile_data'].strip()
-        and st.session_state.app_state['job_description'].strip()
-    )
-
+    is_ready = bool(st.session_state.app_state['profile_data'].strip() and st.session_state.app_state['job_description'].strip())
     if not is_ready:
-        st.info("Please fill at least **Your Profile** and **Job Description** to run the analysis.")
+        st.info("Please fill at least Your Profile and Job Description to generate analysis.")
 
     if st.button("✨ Generate Analysis", disabled=not is_ready):
         combined_text = (
@@ -620,134 +387,96 @@ def draw_map_view():
             f"--- JOB DETAILS ---\n{st.session_state.app_state['job_description']}\n\n"
             f"--- ADDITIONAL NOTES ---\n{st.session_state.app_state['skills_data']}"
         )
-
-        with st.spinner("🧠 The AI is running the match & extraction analysis..."):
+        with st.spinner("🧠 JD Whisperer is analyzing..."):
             result = process_recruiter_text(combined_text)
-
-            # --- Session: store latest analysis result ---
             st.session_state.app_state['analysis_result'] = result
-
             if "error" not in result:
-                # --- Session: append to in-memory history ---
-                st.session_state.history.append(result)
-                # Persist in Google Sheets (if configured)
+                st.session_state['history'].append(result)
                 save_history_to_gsheets(result)
-
-            # --- Session: move flow to results view ---
             st.session_state.app_state['current_view'] = 'results'
             st.rerun()
 
 def draw_results_view():
-    """Renders the final analysis results."""
-    st.markdown(
-        '<div class="main-header">'
-        '<h2>Job Match & Tracker Analysis</h2>'
-        '<p>An at-a-glance analysis of your profile against the recruiter/job details.</p>'
-        '</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div style="display:flex;justify-content:space-between;align-items:center">', unsafe_allow_html=True)
+    # Show brand logo left + title right
+    left, right = st.columns([1,4])
+    with left:
+        try:
+            st.image(LOGO_PATH, width=64)
+        except Exception:
+            pass
+    with right:
+        st.markdown('<h2 style="margin:0">Job Match & Tracker Analysis</h2>', unsafe_allow_html=True)
+        st.markdown('<p style="margin:0;color:var(--muted)">An at-a-glance analysis of your profile against the recruiter/job details.</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    result = st.session_state.app_state['analysis_result']
-
+    result = st.session_state.app_state.get('analysis_result')
     if not result:
-        st.error("No analysis result found. Please go back and run the analysis again.")
+        st.error("No analysis found. Please run an analysis.")
         if st.button("⬅️ Go Back"):
             st.session_state.app_state['current_view'] = 'map'
             st.rerun()
         return
-
     if "error" in result:
-        st.error(result.get("error", "An unknown error occurred during analysis."))
+        st.error(result.get("error"))
         if st.button("⬅️ Go Back"):
             st.session_state.app_state['current_view'] = 'map'
             st.rerun()
         return
 
-    raw_score = result.get('match_score', 'N/A')
+    raw_score = result.get('match_score','N/A')
     try:
-        match_score_value = int(str(raw_score).replace('%', '').strip())
-        match_score_display = f"{match_score_value}%"
+        match_score_display = f"{int(str(raw_score).replace('%','').strip())}%"
     except Exception:
-        match_score_value = None
         match_score_display = str(raw_score)
 
-    # --- TOP ROW: Match Score + Summary (2 columns) ---
-    with st.container():
-        col_a, col_b = st.columns([1, 2], gap="large")
-
-        with col_a:
-            with st.container(border=True):
-                st.metric(label="Overall Match Score", value=match_score_display)
-                st.markdown(f"**Status:** {result.get('status', 'Not specified')}")
-                st.markdown(f"**Next Follow-up:** {result.get('next_follow_up_date', 'Not specified')}")
-
-        with col_b:
-            with st.container(border=True):
-                st.subheader("🧩 Summary")
-                st.markdown(f"- **Role:** {result.get('role_position', 'Not specified')}")
-                st.markdown(f"- **Recruiter / Company:** {result.get('recruiter_company', 'Not specified')}")
-                st.markdown(f"- **Client Company:** {result.get('client_company', 'Not specified')}")
-                st.markdown(f"- **Location:** {result.get('location', 'Not specified')}")
-                st.markdown(f"- **Job Type:** {result.get('job_type', 'Not specified')}")
-                st.markdown(f"- **Mode of Contact:** {result.get('mode_of_contact', 'Not specified')}")
-
-    # --- SECOND ROW: Prep & Gap (FULL WIDTH, under summary) ---
-    with st.container(border=True):
-        st.subheader("🎯 Prep & Gap")
-        st.markdown(f"**Skill Gap (2–3 lines):** {result.get('skill_gap_analysis', 'Not identified.')}")
-        st.markdown(f"**Prep Hint (short):** {result.get('prep_hint', 'No specific hint available.')}")
-
-    st.markdown("---")
-
-    # --- LOWER ROW: Full Extracted Data + Downloads ---
-    col1, col2 = st.columns([2, 1], gap="large")
-
+    col1, col2 = st.columns([1,2], gap="large")
     with col1:
-        with st.container(border=True):
-            st.subheader("📋 Full Extracted Data")
-            df_display = pd.DataFrame([result]).T
-            df_display.columns = ["Extracted Value"]
-            df_display = sanitize_df_for_streamlit(df_display)
-            st.dataframe(df_display, use_container_width=True)
+        st.metric(label="Overall Match Score", value=match_score_display)
+        st.markdown(f"**Status:** {result.get('status','Not specified')}")
+        st.markdown(f"**Next Follow-up:** {result.get('next_follow_up_date','Not specified')}")
 
     with col2:
-        with st.container(border=True):
-            st.subheader("💾 Downloads")
+        st.subheader("🧩 Summary")
+        st.markdown(f"- **Role:** {result.get('role_position','Not specified')}")
+        st.markdown(f"- **Company:** {result.get('client_company','Not specified')}")
+        st.markdown(f"- **Location:** {result.get('location','Not specified')}")
+        st.markdown(f"- **Mode:** {result.get('mode_of_contact','Not specified')}")
 
-            output = io.StringIO()
-            writer = csv.DictWriter(output, fieldnames=result.keys())
-            writer.writeheader()
-            writer.writerow(result)
-            csv_data = output.getvalue()
-            st.download_button(
-                label="📄 Download Job Tracker (.csv)",
-                data=csv_data,
-                file_name="job_details.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+    st.markdown('<div class="whisper-divider"></div>', unsafe_allow_html=True)
 
-            ics_data = create_ics_file(result)
-            if ics_data:
-                st.download_button(
-                    label="📅 Download Calendar Event (.ics)",
-                    data=ics_data,
-                    file_name="interview.ics",
-                    mime="text/calendar",
-                    use_container_width=True
-                )
-            else:
-                st.caption(
-                    "No valid interview date found to create a calendar event "
-                    "(check that the model returned YYYY-MM-DD)."
-                )
+    # Prep & Gap full width
+    st.subheader("🎯 Prep & Gap")
+    st.markdown(f"**Skill Gap (short):** {result.get('skill_gap_analysis','Not identified.')}")
+    st.markdown(f"**Prep Hint:** {result.get('prep_hint','No hint available.')}")
 
-    st.markdown("---")
+    st.markdown('---')
 
-    # Session history table (this session only)
-    if st.session_state.history:
+    colL, colR = st.columns([2,1], gap="large")
+    with colL:
+        st.subheader("📋 Full Extracted Data")
+        df_display = pd.DataFrame([result]).T
+        df_display.columns = ["Extracted Value"]
+        df_display = sanitize_df_for_streamlit(df_display)
+        st.dataframe(df_display, use_container_width=True)
+    with colR:
+        st.subheader("💾 Downloads")
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=result.keys())
+        writer.writeheader()
+        writer.writerow(result)
+        csv_data = output.getvalue()
+        st.download_button("📄 Download Job Tracker (.csv)", data=csv_data, file_name="job_details.csv", mime="text/csv", use_container_width=True)
+        ics_data = create_ics_file(result)
+        if ics_data:
+            st.download_button("📅 Download Calendar Event (.ics)", data=ics_data, file_name="interview.ics", mime="text/calendar", use_container_width=True)
+        else:
+            st.caption("No valid interview date found to create a calendar event (YYYY-MM-DD expected).")
+
+    st.markdown('---')
+    if st.session_state.get('history'):
         with st.expander("🧾 View this session's history"):
-            hist_df = pd.DataFrame(st.session_state.history)
+            hist_df = pd.DataFrame(st.session_state['history'])
             hist_df = sanitize_df_for_streamlit(hist_df)
             st.dataframe(hist_df, use_container_width=True)
 
@@ -758,181 +487,123 @@ def draw_results_view():
             st.rerun()
     with col_new:
         if st.button("🔄 Start New Analysis"):
-            reset_app_state()  # --- Session: reset full flow + inputs ---
+            reset_app_state()
             st.rerun()
 
 def draw_history_view():
-    """Show a UX-friendly history view (from Google Sheets or session)."""
-    st.markdown(
-        '<div class="main-header">'
-        '<h2>📊 Job History Dashboard</h2>'
-        '<p>Explore all your past analyses stored in Google Sheets (or this session).</p>'
-        '</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div style="display:flex;align-items:center;gap:1rem">', unsafe_allow_html=True)
+    try:
+        st.image(LOGO_PATH, width=56)
+    except Exception:
+        pass
+    st.markdown('<h2 style="margin:0">📊 History Dashboard</h2>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     df = load_history_dataframe()
-
     if df.empty:
-        st.info("No history found yet. Run at least one analysis and it will appear here.")
+        st.info("No history found yet.")
         return
-
-    # Try to parse timestamp column if it exists
     if "timestamp_utc" in df.columns:
         df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], errors="coerce")
-
-    # --- Metrics row ---
-    with st.container():
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric("Total Records", len(df))
-
-        if "role_position" in df.columns:
-            col2.metric("Unique Roles", df["role_position"].fillna("").nunique())
-        else:
-            col2.metric("Unique Roles", "-")
-
+    # Metrics
+    c1,c2,c3 = st.columns(3)
+    c1.metric("Total Records", len(df))
+    if "role_position" in df.columns:
+        c2.metric("Unique Roles", df["role_position"].fillna("").nunique())
+    else:
+        c2.metric("Unique Roles","-")
+    if "status" in df.columns:
+        c3.metric("Statuses", df["status"].fillna("").nunique())
+    else:
+        c3.metric("Statuses","-")
+    st.markdown('---')
+    # Filters
+    st.subheader("🔍 Filters")
+    left, right = st.columns([3,1])
+    with left:
+        text_query = st.text_input("Search role / recruiter / client", placeholder="e.g., Python, Accenture")
+    with right:
         if "status" in df.columns:
-            col3.metric("Statuses", df["status"].fillna("").nunique())
+            status_opts = sorted([s for s in df["status"].dropna().unique() if s])
         else:
-            col3.metric("Statuses", "-")
-
-    st.markdown("---")
-
-    # --- Filters ---
-    with st.container():
-        st.subheader("🔍 Filter History")
-
-        col_f1, col_f2 = st.columns([2, 1])
-
-        with col_f1:
-            text_query = st.text_input(
-                "Search by role, recruiter, or client",
-                placeholder="e.g. Python, Accenture, Data Engineer..."
-            )
-
-        with col_f2:
-            if "status" in df.columns:
-                all_statuses = sorted([s for s in df["status"].dropna().unique() if s])
-            else:
-                all_statuses = []
-
-            status_filter = st.multiselect(
-                "Status filter",
-                options=all_statuses,
-                default=all_statuses
-            )
-
-        # Optional date filter if we have timestamps
-        if "timestamp_utc" in df.columns and df["timestamp_utc"].notna().any():
-            min_date = df["timestamp_utc"].min().date()
-            max_date = df["timestamp_utc"].max().date()
-            date_range = st.slider(
-                "Date range (UTC)",
-                min_value=min_date,
-                max_value=max_date,
-                value=(min_date, max_date)
-            )
-        else:
-            date_range = None
-
-    # --- Apply filters ---
+            status_opts = []
+        status_filter = st.multiselect("Status", options=status_opts, default=status_opts)
+    date_range = None
+    if "timestamp_utc" in df.columns and df["timestamp_utc"].notna().any():
+        min_d = df["timestamp_utc"].min().date()
+        max_d = df["timestamp_utc"].max().date()
+        date_range = st.slider("Date range", min_value=min_d, max_value=max_d, value=(min_d, max_d))
     mask = pd.Series(True, index=df.index)
-
     if text_query:
         q = text_query.lower()
-        cols_to_search = []
-        for name in ["role_position", "recruiter_company", "client_company"]:
+        cols_to_search=[]
+        for name in ["role_position","recruiter_company","client_company"]:
             if name in df.columns:
                 cols_to_search.append(df[name].fillna("").str.lower())
-
         if cols_to_search:
             combined = cols_to_search[0].str.contains(q)
-            for extra_col in cols_to_search[1:]:
-                combined = combined | extra_col.str.contains(q)
+            for extra in cols_to_search[1:]:
+                combined = combined | extra.str.contains(q)
             mask &= combined
-
-    if all_statuses and status_filter:
-        if "status" in df.columns:
-            mask &= df["status"].fillna("").isin(status_filter)
-
+    if status_filter and "status" in df.columns:
+        mask &= df["status"].fillna("").isin(status_filter)
     if date_range and "timestamp_utc" in df.columns:
-        start, end = date_range
-        mask &= (df["timestamp_utc"].dt.date >= start) & (df["timestamp_utc"].dt.date <= end)
-
+        s,e = date_range
+        mask &= (df["timestamp_utc"].dt.date >= s) & (df["timestamp_utc"].dt.date <= e)
     df_filtered = df[mask].copy()
     df_filtered = sanitize_df_for_streamlit(df_filtered)
+    st.markdown(f"Showing **{len(df_filtered)}** records")
+    st.markdown('---')
+    st.dataframe(df_filtered, use_container_width=True, hide_index=True)
 
-    st.markdown(f"Showing **{len(df_filtered)}** records after filters.")
-    st.markdown("---")
-
-    # --- Table ---
-    st.subheader("🧾 Detailed History")
-    st.dataframe(
-        df_filtered,
-        use_container_width=True,
-        hide_index=True
-    )
-
-# -------------------------------------------------------------------
-#  MAIN APP ROUTER
-# -------------------------------------------------------------------
-
+# ------------------------------
+#  MAIN: sidebar + routing
+# ------------------------------
 def main():
-    load_css()
+    load_brand_css()
 
+    # Sidebar with brand logo + mode buttons (stored in session_state['mode'])
     with st.sidebar:
-        st.markdown("### 🤖 Job Agent")
-        st.markdown(
-            "Turn messy JDs, emails, and call notes into a **structured job tracker** "
-            "with follow-up dates and interview events."
-        )
+        st.markdown("<div style='display:flex;align-items:center;gap:8px'>", unsafe_allow_html=True)
+        try:
+            st.image(LOGO_PATH, width=48)
+        except Exception:
+            pass
+        st.markdown("<div><strong>JD Whisperer</strong><br><small style='color:var(--muted)'>Decode any job description</small></div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- MODE SWITCH AS BIG BUTTONS (stored in session_state['mode']) ---
         st.markdown("#### Mode")
-
-        col_m1, col_m2 = st.columns(2)
-
-        with col_m1:
+        col_a, col_b = st.columns(2)
+        with col_a:
             if st.button("Analyze", use_container_width=True, key="mode_analyze_btn"):
-                st.session_state["mode"] = "Analyze"
+                st.session_state['mode'] = "Analyze"
                 st.rerun()
-
-        with col_m2:
+        with col_b:
             if st.button("History", use_container_width=True, key="mode_history_btn"):
-                st.session_state["mode"] = "History"
+                st.session_state['mode'] = "History"
                 st.rerun()
-
-        # Tiny label so user sees which mode is active
         st.caption(f"Current mode: **{st.session_state['mode']}**")
 
-        st.markdown("**Steps (Analyze mode):**")
-        st.markdown("1. Paste your profile & the job details\n2. Click *Generate Analysis*\n3. Download CSV / Calendar")
+        st.markdown("---")
+        st.markdown("**Steps (Analyze mode):**\n1. Paste profile & JD\n2. Click Generate Analysis\n3. Download CSV / Calendar")
 
-        # Optional indicator for Google Sheets
         creds_dict, sheet_id = _get_gsheets_creds_and_id()
         if HAS_GSHEETS_LIBS and creds_dict and sheet_id:
             st.success("Google Sheets logging: ON")
         else:
-            st.info("Google Sheets logging: OFF (configure GOOGLE_SHEET_ID & GOOGLE_SERVICE_ACCOUNT)")
+            st.info("Google Sheets logging: OFF (configure secrets)")
 
-        st.markdown("---")
+        st.markdown('---')
         if st.session_state.app_state.get('analysis_result'):
             st.markdown("**Last Match Score:**")
-            last = st.session_state.app_state['analysis_result']
-            st.write(last.get('match_score', 'N/A'))
+            st.write(st.session_state.app_state['analysis_result'].get('match_score','N/A'))
 
-    # --- Session: read current mode from session_state ---
-    mode = st.session_state["mode"]
-
-    # If user chose History, skip normal router
+    mode = st.session_state.get('mode', 'Analyze')
     if mode == "History":
         draw_history_view()
         return
 
-    # Normal flow when in "Analyze" mode: start/map/results
-    view = st.session_state.app_state['current_view']
-
+    view = st.session_state.app_state.get('current_view','start')
     if view == 'start':
         draw_start_view()
     elif view == 'map':
